@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "attenlabs-saa"
+version = "0.3.0"
+description = "Python SDK for SAA (Selective Auditory Attention). Streams microphone + webcam to the Attention Labs cloud and emits typed events for predictions, VAD, conversation state, and speech audio ready for downstream LLM use."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Attention Labs", email = "support@attentionlabs.ai" },
+]
+keywords = [
+    "saa",
+    "selective-auditory-attention",
+    "addressee-detection",
+    "voice-ai",
+    "voice-agent",
+    "pre-asr",
+    "wake-word-free",
+    "vad",
+    "realtime",
+    "websocket",
+    "attentionlabs",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "numpy>=2.2.6",
+    "websocket-client>=1.9.0",
+    "sounddevice>=0.5.5",
+    "opencv-python>=4.13.0.92",
+]
+
+[project.urls]
+Homepage = "https://attentionlabs.ai"
+Documentation = "https://attentionlabs.ai/docs"
+Repository = "https://github.com/attenlabs/saa"
+Issues = "https://github.com/attenlabs/saa/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/saa"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/saa",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]

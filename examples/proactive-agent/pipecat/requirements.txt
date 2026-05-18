@@ -1,0 +1,8 @@
+# Proactive overlay on examples/pipecat/. Inherits everything from the
+# parent and adds the HTTP sidecar.
+# Run from examples/pipecat/ first to install the heavy deps:
+#   pip install -r ../../pipecat/requirements.txt
+# then install the overlay:
+#   pip install -r requirements.txt
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.30,<1.0

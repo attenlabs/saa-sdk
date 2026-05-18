@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Try SAA Cloud · 60-second live demo · Attention Labs</title>
+<meta name="description" content="Try the SAA Cloud classifier live in your browser for 60 seconds. No account, no token. Streams your mic and webcam to wss://server.attentionlabs.ai/ws and shows the device-directedness prediction in real time.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="Try SAA Cloud · 60-second live demo">
+<meta property="og:description" content="Wake-word-free voice gating, live in your browser. No account required.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%228%22%20fill%3D%22%230b0d12%22%2F%3E%3Cpath%20d%3D%22M8%2018c0-4%204-7%208-7s8%203%208%207h-3c0-2.5-2.2-4.5-5-4.5s-5%202-5%204.5H8z%22%20fill%3D%22%236ea8ff%22%2F%3E%3Ccircle%20cx%3D%2216%22%20cy%3D%2222%22%20r%3D%222%22%20fill%3D%22%236ad19a%22%2F%3E%3C%2Fsvg%3E" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f6f8fb;
+    --panel: #ffffff;
+    --panel-2: #f3f5f9;
+    --border: #e3e7ee;
+    --text: #11141a;
+    --muted: #5b6473;
+    --accent: #2563eb;
+    --accent-fg: #ffffff;
+    --green: #10a565;
+    --yellow: #c98700;
+    --red: #d93945;
+    --listening: #10a565;
+    --sending: #2563eb;
+    --cancelled: #d93945;
+    --idle: #5b6473;
+    --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 16px rgba(15, 23, 42, 0.05);
+    --radius: 12px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, "JetBrains Mono", monospace;
+  }
+  :root[data-theme="dark"], :root[data-theme="auto"] {
+    color-scheme: dark;
+    --bg: #0b0d12;
+    --bg-soft: #0e1118;
+    --panel: #14171f;
+    --panel-2: #1a1e2a;
+    --border: #2a2f3d;
+    --text: #e8ecf2;
+    --muted: #8a93a6;
+    --accent: #6ea8ff;
+    --accent-fg: #0b0d12;
+    --green: #6ad19a;
+    --yellow: #ffcc66;
+    --red: #ff7a8a;
+    --listening: #6ad19a;
+    --sending: #6ea8ff;
+    --cancelled: #ff7a8a;
+    --idle: #8a93a6;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.35);
+  }
+  @media (prefers-color-scheme: light) {
+    :root[data-theme="auto"] {
+      color-scheme: light;
+      --bg: #ffffff;
+      --bg-soft: #f6f8fb;
+      --panel: #ffffff;
+      --panel-2: #f3f5f9;
+      --border: #e3e7ee;
+      --text: #11141a;
+      --muted: #5b6473;
+      --accent: #2563eb;
+      --accent-fg: #ffffff;
+      --green: #10a565;
+      --yellow: #c98700;
+      --red: #d93945;
+      --listening: #10a565;
+      --sending: #2563eb;
+      --cancelled: #d93945;
+      --idle: #5b6473;
+      --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 16px rgba(15, 23, 42, 0.05);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    min-height: 100vh;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 32px 24px 64px; }
+
+  header.topbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px;
+  }
+  .brand { font-weight: 600; letter-spacing: -0.01em; }
+  .brand small { color: var(--muted); font-weight: 400; margin-left: 8px; }
+  .topbar-right { display: flex; gap: 16px; align-items: center; color: var(--muted); font-size: 14px; }
+
+  .hero { margin: 8px 0 24px; }
+  .hero h1 { font-size: clamp(28px, 4.4vw, 40px); line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 10px; }
+  .hero p.lede { color: var(--muted); max-width: 64ch; margin: 0 0 16px; }
+
+  .comingsoon {
+    display: none;
+    border: 1px solid var(--border);
+    background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    margin: 0 0 20px;
+  }
+  .comingsoon[data-visible="true"] { display: block; }
+  .comingsoon h2 { margin: 0 0 6px; font-size: 18px; }
+  .comingsoon p { margin: 0 0 6px; color: var(--muted); }
+  .comingsoon .btn-row { margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 16px; border-radius: 10px;
+    font-weight: 600; font-size: 14px;
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    cursor: pointer; transition: transform 0.05s ease, background 0.15s ease, border-color 0.15s ease;
+  }
+  .btn:hover { background: var(--panel-2); }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+  .btn-primary:hover { background: var(--accent); filter: brightness(1.08); }
+  .btn-ghost { background: transparent; }
+
+  .stage-wrap { border: 1px solid var(--border); background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; }
+  .stage { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden; }
+  .stage video { width: 100%; height: 100%; object-fit: cover; display: block; transform: scaleX(-1); }
+  .stage .waveform { position: absolute; left: 12px; right: 12px; bottom: 12px; height: 36px; pointer-events: none; }
+  .stage .overlay { position: absolute; inset: 0; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; padding: 12px; }
+  .badge-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge { font-family: var(--mono); font-size: 12px; background: rgba(0,0,0,0.55); color: #fff; padding: 4px 8px; border-radius: 999px; backdrop-filter: blur(6px); }
+  .badge.ok { background: rgba(16, 165, 101, 0.85); }
+  .badge.warn { background: rgba(201, 135, 0, 0.85); }
+  .badge.err { background: rgba(217, 57, 69, 0.85); }
+
+  .stage .gate { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.55); backdrop-filter: blur(2px); text-align: center; padding: 24px; }
+  .stage .gate[hidden] { display: none; }
+  .stage .gate-inner { max-width: 420px; color: #f6f8fb; }
+  .stage .gate-inner p { margin: 6px 0 14px; color: rgba(246,248,251,0.85); }
+
+  .countdown { font-family: var(--mono); font-size: 13px; background: rgba(0,0,0,0.55); color: #fff; padding: 4px 10px; border-radius: 999px; align-self: flex-end; }
+  .countdown.tick { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.55; } }
+
+  .panel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  @media (max-width: 720px) { .panel-grid { grid-template-columns: 1fr; } }
+  .panel { border: 1px solid var(--border); background: var(--panel); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+  .panel h3 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+
+  .pred-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .pred-pill { font-weight: 700; font-size: 15px; padding: 6px 12px; border-radius: 999px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+  .pred-pill.cls-0 { background: rgba(138,147,166,0.18); }
+  .pred-pill.cls-1 { background: rgba(255,204,102,0.22); color: var(--yellow); border-color: rgba(255,204,102,0.5); }
+  .pred-pill.cls-2 { background: rgba(106,209,154,0.22); color: var(--green); border-color: rgba(106,209,154,0.5); }
+  .pred-conf { font-family: var(--mono); font-size: 14px; color: var(--muted); }
+  .pred-conf strong { color: var(--text); }
+  .pred-bar { position: relative; height: 10px; width: 100%; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
+  .pred-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0%; background: var(--accent); transition: width 0.12s linear; }
+  .pred-bar-threshold { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text); opacity: 0.55; }
+  .pred-meta { display: flex; justify-content: space-between; margin-top: 6px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .stat { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; background: var(--panel-2); border-radius: 8px; border: 1px solid var(--border); }
+  .stat .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat .v { font-family: var(--mono); font-size: 16px; font-weight: 600; }
+  .stat .v.under-target { color: var(--green); }
+  .stat .v.warn { color: var(--yellow); }
+  .stat .v.error { color: var(--red); }
+
+  .vad-pill { font-family: var(--mono); font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
+  .vad-pill.speech { background: rgba(106,209,154,0.18); color: var(--green); border-color: rgba(106,209,154,0.4); }
+
+  .state-pill { font-family: var(--mono); font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
+  .state-pill.listening { background: rgba(106,209,154,0.18); color: var(--listening); }
+  .state-pill.sending { background: rgba(110,168,255,0.18); color: var(--sending); }
+  .state-pill.cancelled { background: rgba(255,122,138,0.18); color: var(--cancelled); }
+
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; margin: 16px 0 0; align-items: center; }
+  .controls .grow { flex: 1; }
+  .status { font-size: 13px; color: var(--muted); min-height: 1.4em; }
+  .status.error { color: var(--red); }
+  .status.ok { color: var(--green); }
+
+  .footer-cta { margin-top: 28px; padding: 18px 20px; border: 1px solid var(--border); background: var(--panel); border-radius: var(--radius); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+  .footer-cta strong { font-size: 15px; }
+  .footer-cta .muted { color: var(--muted); }
+
+  .install-row {
+    margin-top: 16px;
+    padding: 12px 16px;
+    border: 1px solid var(--border);
+    background: var(--bg-soft);
+    border-radius: var(--radius);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    align-items: baseline;
+    font-size: 13px;
+  }
+  .install-row code { font-family: var(--mono); font-size: 12.5px; background: var(--panel-2); padding: 2px 6px; border-radius: 6px; border: 1px solid var(--border); color: var(--text); }
+  .install-row a { color: var(--text); text-decoration: none; }
+  .install-row a:hover { text-decoration: underline; }
+
+  .footer-meta { margin-top: 24px; color: var(--muted); font-size: 13px; text-align: center; }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  .btn { min-height: 44px; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+
+  @media (max-width: 600px) {
+    .wrap { padding: 22px 16px 56px; }
+    header.topbar { flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+    .topbar-right { font-size: 13px; gap: 12px; }
+    .hero h1 { font-size: clamp(24px, 7vw, 32px); }
+    .hero p.lede { font-size: 14.5px; }
+    .panel-grid { gap: 12px; margin-top: 12px; }
+    .panel { padding: 14px; }
+    .panel h3 { font-size: 12px; }
+    .controls { gap: 8px; }
+    .controls .btn { flex: 1 1 calc(50% - 4px); justify-content: center; }
+    .install-row { padding: 11px 13px; font-size: 12.5px; }
+    .footer-cta { padding: 14px 16px; }
+    .footer-cta strong { font-size: 14px; }
+    .footer-meta { font-size: 12px; padding-bottom: env(safe-area-inset-bottom); }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="topbar">
+      <div class="brand">Attention Labs <small>SAA Cloud · live demo</small></div>
+      <div class="topbar-right">
+        <a href="https://github.com/attenlabs/saa" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://attentionlabs.ai/docs/js/reference/" target="_blank" rel="noopener">Docs</a>
+      </div>
+    </header>
+
+    <section class="hero">
+      <h1>Wake-words are obsolete. Try the live model for 60 seconds.</h1>
+      <p class="lede">
+        Click <strong>Start</strong>. The page mints a 60-second demo token, streams your
+        mic and webcam to <code>wss://server.attentionlabs.ai/ws</code>, and shows the
+        real device-directedness prediction as you speak to &mdash; and away from &mdash;
+        the camera. No account, no token paste.
+      </p>
+    </section>
+
+    <aside id="comingsoon" class="comingsoon" role="complementary" aria-live="polite">
+      <h2>Run the same 60-second demo with your dashboard token</h2>
+      <p id="comingsoonReason">Public token mint is currently gated on this host. Grab a free dashboard token and run the identical end-to-end flow against the production WebSocket endpoint &mdash; same model, same latency, same UI.</p>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="https://attentionlabs.ai/dashboard" target="_blank" rel="noopener">Get a free token &rarr;</a>
+        <a class="btn btn-ghost" href="https://github.com/attenlabs/saa/tree/main/examples/browser-demo" target="_blank" rel="noopener">Browser demo (paste-your-own-token)</a>
+        <a class="btn btn-ghost" href="https://github.com/attenlabs/saa/tree/main/examples" target="_blank" rel="noopener">More examples</a>
+      </div>
+    </aside>
+
+    <div class="stage-wrap">
+      <div class="stage">
+        <video id="video" autoplay muted playsinline aria-label="Camera preview"></video>
+        <canvas id="waveform" class="waveform" aria-hidden="true"></canvas>
+        <div class="overlay">
+          <div class="badge-row">
+            <span id="latencyBadge" class="badge" title="WebSocket round-trip time">RTT &mdash;</span>
+            <span id="faceBadge" class="badge" title="Faces detected by the server-side visual model">faces &mdash;</span>
+            <span id="sourceBadge" class="badge" title="Prediction source emitted by the server">source &mdash;</span>
+          </div>
+          <div class="badge-row" style="justify-content: flex-end;">
+            <span id="countdown" class="countdown" aria-live="polite">60s</span>
+          </div>
+        </div>
+        <div id="gate" class="gate" hidden>
+          <div class="gate-inner">
+            <h2 style="margin:0 0 4px">Ready when you are.</h2>
+            <p>We&rsquo;ll ask for mic + camera, mint a 60-second token, and connect to the cloud model.</p>
+            <button id="startBtn" class="btn btn-primary" type="button">Start 60-second demo</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="stopBtn" class="btn btn-ghost" type="button" disabled>Stop</button>
+        <span id="vadPill" class="vad-pill" aria-live="polite">silent</span>
+        <span id="statePill" class="state-pill" aria-live="polite">idle</span>
+        <span class="grow"></span>
+        <span id="status" class="status" role="status" aria-live="polite">Awaiting mic + camera permission.</span>
+      </div>
+    </div>
+
+    <div class="panel-grid">
+      <section class="panel" aria-label="Live prediction">
+        <h3>Live cloud prediction</h3>
+        <div class="pred-row">
+          <span id="predPill" class="pred-pill cls-0">idle</span>
+          <span id="predConf" class="pred-conf">confidence <strong>&mdash;</strong></span>
+        </div>
+        <div class="pred-bar" aria-hidden="true">
+          <div id="predBarFill" class="pred-bar-fill"></div>
+          <div id="predBarThreshold" class="pred-bar-threshold" style="left: 70%;"></div>
+        </div>
+        <div class="pred-meta">
+          <span>0.0</span>
+          <span id="thresholdLabel">threshold &tau; = 0.70</span>
+          <span>1.0</span>
+        </div>
+        <p class="sr-only" id="a11yPred">No prediction yet.</p>
+      </section>
+
+      <section class="panel" aria-label="Session stats">
+        <h3>Session</h3>
+        <div class="stat-grid">
+          <div class="stat"><span class="k">RTT</span><span class="v" id="statRtt">&mdash;</span></div>
+          <div class="stat"><span class="k">Predictions</span><span class="v" id="statPreds">0</span></div>
+          <div class="stat"><span class="k">Audio frames sent</span><span class="v" id="statAudio">0</span></div>
+          <div class="stat"><span class="k">Video frames sent / skipped</span><span class="v" id="statVideo">0 / 0</span></div>
+        </div>
+        <p class="pred-meta" style="justify-content:flex-start;gap:8px;margin-top:10px;">
+          Target end-to-end latency: <span style="color:var(--green)">sub-150&thinsp;ms</span>. Real numbers vary by region.
+        </p>
+      </section>
+    </div>
+
+    <aside class="footer-cta" role="complementary">
+      <strong>This is SAA Cloud.</strong>
+      <span class="muted">To use it in your own app, grab a token at the dashboard.</span>
+      <a class="btn btn-primary" href="https://attentionlabs.ai/dashboard" target="_blank" rel="noopener">Get a token</a>
+      <a class="btn btn-ghost" href="https://github.com/attenlabs/saa" target="_blank" rel="noopener">View source</a>
+    </aside>
+
+    <nav class="install-row" aria-label="Install and docs">
+      <span class="muted">Install:</span>
+      <a href="https://www.npmjs.com/package/@attenlabs/saa-js" target="_blank" rel="noopener"><code>npm i @attenlabs/saa-js</code></a>
+      <span class="muted" aria-hidden="true">·</span>
+      <a href="https://pypi.org/project/attenlabs-saa/" target="_blank" rel="noopener"><code>pip install attenlabs-saa</code></a>
+      <span class="muted" aria-hidden="true">·</span>
+      <span class="muted">Docs:</span>
+      <a href="https://attentionlabs.ai/docs/js/reference/" target="_blank" rel="noopener">JS reference</a>
+      <span class="muted" aria-hidden="true">·</span>
+      <a href="https://attentionlabs.ai/docs/python/reference/" target="_blank" rel="noopener">Python reference</a>
+    </nav>
+
+    <p class="footer-meta">
+      Built by <a href="https://attentionlabs.ai" target="_blank" rel="noopener">Attention Labs</a>.
+      Live model. See the
+      <a href="https://arxiv.org/abs/2604.08412" target="_blank" rel="noopener">paper</a>
+      and
+      <a href="https://github.com/attenlabs/saa/blob/main/docs/known_limits.md" target="_blank" rel="noopener">known limits</a>
+      before you ship.
+    </p>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

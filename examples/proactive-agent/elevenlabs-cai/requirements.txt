@@ -1,0 +1,7 @@
+# Proactive overlay on examples/elevenlabs-cai/. Inherits parent deps.
+# Install parent first:
+#   pip install -r ../../elevenlabs-cai/requirements.txt
+# then the overlay:
+#   pip install -r requirements.txt
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.30,<1.0

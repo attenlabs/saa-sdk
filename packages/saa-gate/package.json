@@ -1,0 +1,56 @@
+{
+  "name": "@attenlabs/saa-gate",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Production routing-policy state machine that turns SAA speechReady events into structured allow/drop decisions for downstream STT, LLM, and TTS pipelines.",
+  "keywords": [
+    "saa",
+    "selective-auditory-attention",
+    "addressee-detection",
+    "voice-agent",
+    "voice-ai",
+    "routing",
+    "state-machine",
+    "speech-gate",
+    "attenlabs"
+  ],
+  "license": "Apache-2.0",
+  "author": "Attention Labs <support@attentionlabs.ai>",
+  "homepage": "https://github.com/attenlabs/saa/tree/main/packages/saa-gate",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/attenlabs/saa.git",
+    "directory": "packages/saa-gate"
+  },
+  "bugs": "https://github.com/attenlabs/saa/issues",
+  "type": "module",
+  "main": "./src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "peerDependencies": {
+    "@attenlabs/saa-js": ">=0.2.0 <2"
+  },
+  "peerDependenciesMeta": {
+    "@attenlabs/saa-js": {
+      "optional": false
+    }
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "sideEffects": false
+}

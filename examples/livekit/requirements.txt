@@ -1,0 +1,13 @@
+# Pinned for the May 18, 2026 reference adapter. Loosen as new majors land.
+# Mirror of [project.dependencies] in pyproject.toml so that
+# `pip install -r requirements.txt` and `pip install -e .` install the
+# same versions.
+attenlabs-saa>=0.3.0,<1
+livekit-agents>=1.0.0,<2.0.0
+livekit-plugins-openai>=1.0.0,<2.0.0
+livekit-plugins-deepgram>=1.0.0,<2.0.0
+livekit-plugins-silero>=1.0.0,<2.0.0
+python-dotenv>=1.0.0
+numpy>=1.24
+# Used to encode LiveKit camera frames as JPEG for SAA's multi-modal scorer.
+Pillow>=10.0.0

@@ -1,0 +1,194 @@
+:root,
+[data-theme='obs'] {
+  --ol-bg: rgba(8, 12, 20, 0.78);
+  --ol-bg-soft: rgba(255, 255, 255, 0.06);
+  --ol-border: rgba(255, 255, 255, 0.12);
+  --ol-text: #f7fbff;
+  --ol-dim: rgba(247, 251, 255, 0.64);
+  --ol-pass: #37d67a;
+  --ol-drop: #ff6176;
+  --ol-abstain: #f4c24f;
+  --ol-override: #a78bfa;
+  --ol-idle: #8ba3c7;
+  --ol-shadow: 0 14px 42px rgba(0, 0, 0, 0.26);
+  color-scheme: dark;
+}
+
+[data-theme='dark'] {
+  --ol-bg: #0d1117;
+  --ol-bg-soft: #161b22;
+  --ol-border: #30363d;
+  --ol-text: #e6edf3;
+  --ol-dim: #8b949e;
+  --ol-pass: #3fb950;
+  --ol-drop: #ff7b72;
+  --ol-abstain: #d29922;
+  --ol-override: #bc8cff;
+  --ol-idle: #8b949e;
+  --ol-shadow: none;
+  color-scheme: dark;
+}
+
+[data-theme='light'] {
+  --ol-bg: rgba(255, 255, 255, 0.94);
+  --ol-bg-soft: rgba(15, 23, 42, 0.06);
+  --ol-border: rgba(15, 23, 42, 0.14);
+  --ol-text: #0f172a;
+  --ol-dim: #64748b;
+  --ol-pass: #15803d;
+  --ol-drop: #dc2626;
+  --ol-abstain: #a16207;
+  --ol-override: #7c3aed;
+  --ol-idle: #64748b;
+  --ol-shadow: 0 10px 28px rgba(15, 23, 42, 0.14);
+  color-scheme: light;
+}
+
+.ol-body {
+  margin: 0;
+  background: transparent;
+  color: var(--ol-text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.ol-stack {
+  display: grid;
+  gap: 0.45rem;
+  inline-size: min(760px, calc(100vw - 24px));
+  padding: 12px;
+}
+
+.ol-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 0.55rem;
+  min-block-size: 2.25rem;
+  padding: 0.45rem 0.62rem;
+  border: 1px solid var(--ol-border);
+  border-radius: 999px;
+  background: var(--ol-bg);
+  box-shadow: var(--ol-shadow);
+  backdrop-filter: blur(10px);
+}
+
+.ol-row-empty,
+.ol-row-status {
+  background: color-mix(in srgb, var(--ol-bg) 78%, transparent);
+}
+
+.ol-row-status {
+  min-block-size: 1.85rem;
+  padding-block: 0.32rem;
+  font-size: 0.75rem;
+}
+
+.ol-row-new {
+  animation: ol-pop 0.22s ease-out;
+}
+
+@keyframes ol-pop {
+  from { transform: translateY(4px); opacity: 0.5; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.ol-pill {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 5.8rem;
+  padding: 0.36rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: #07111f;
+}
+
+.ol-pill-pass { background: var(--ol-pass); }
+.ol-pill-drop { background: var(--ol-drop); }
+.ol-pill-abstain { background: var(--ol-abstain); }
+.ol-pill-override { background: var(--ol-override); }
+.ol-pill-idle { background: var(--ol-idle); color: #fff; }
+
+.ol-cmd {
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--ol-text);
+  font-size: 0.92rem;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ol-rule {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78rem;
+  font-weight: 800;
+  opacity: 0.92;
+}
+
+.ol-rule-pass { color: var(--ol-pass); }
+.ol-rule-drop { color: var(--ol-drop); }
+.ol-rule-abstain { color: var(--ol-abstain); }
+.ol-rule-override { color: var(--ol-override); }
+.ol-rule-idle { color: var(--ol-idle); }
+
+.ol-reason,
+.ol-meta {
+  margin-inline-start: 0.42rem;
+  color: var(--ol-dim);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.ol-reason::before {
+  content: '— ';
+}
+
+.ol-meta::before {
+  content: '· ';
+}
+
+.ol-ts {
+  min-inline-size: 3.8rem;
+  color: var(--ol-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  text-align: end;
+}
+
+.ol-text-dim {
+  overflow: hidden;
+  color: var(--ol-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ol-status-label {
+  color: var(--ol-text);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.ol-dot {
+  inline-size: 0.72rem;
+  block-size: 0.72rem;
+  border-radius: 999px;
+  background: var(--ol-idle);
+  box-shadow: 0 0 18px currentColor;
+}
+
+.ol-dot-connected { background: var(--ol-pass); color: var(--ol-pass); }
+.ol-dot-connecting,
+.ol-dot-reconnecting { background: var(--ol-abstain); color: var(--ol-abstain); }
+.ol-dot-error,
+.ol-dot-closed { background: var(--ol-drop); color: var(--ol-drop); }
+.ol-dot-paused { background: var(--ol-override); color: var(--ol-override); }
+.ol-dot-idle { background: var(--ol-idle); color: var(--ol-idle); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ol-row-new { animation: none; }
+}

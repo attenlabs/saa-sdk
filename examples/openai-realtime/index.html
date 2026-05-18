@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SAA + OpenAI Realtime · Attention Labs</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; background: #0b0d12; color: #e8ecf2; margin: 0; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px; }
+  h1 { margin-top: 0; }
+  p, li { color: #c0c8d6; line-height: 1.6; }
+  .panel { background: #14171f; border: 1px solid #2a2f3d; border-radius: 12px; padding: 18px; margin-top: 16px; }
+  .panel h2 { margin: 0 0 8px; font-size: 14px; text-transform: uppercase; color: #8a93a6; letter-spacing: 1.2px; }
+  video { width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 8px; transform: scaleX(-1); }
+  input[type=text] { width: 100%; padding: 10px; margin: 6px 0; background: #1a1e2a; border: 1px solid #2a2f3d; color: #e8ecf2; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 13px; box-sizing: border-box; }
+  label.field { display: block; margin: 10px 0 0; font-size: 12px; color: #8a93a6; text-transform: uppercase; letter-spacing: 1px; }
+  button { padding: 10px 18px; background: #6ea8ff; color: #0b0d12; border: 0; border-radius: 8px; cursor: pointer; font-weight: 600; margin-top: 12px; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button { min-height: 44px; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+  @media (max-width: 600px) {
+    .wrap { padding: 24px 16px 60px; }
+    h1 { font-size: clamp(22px, 6.5vw, 28px); }
+    .panel { padding: 14px; }
+    .panel h2 { font-size: 12px; }
+    p, li { font-size: 14.5px; }
+    button { width: 100%; padding: 12px 16px; }
+  }
+  .mode { display: flex; gap: 14px; align-items: center; margin: 6px 0 4px; }
+  .mode label { color: #c0c8d6; font-size: 13px; cursor: pointer; }
+  .log { height: 280px; overflow-y: auto; padding: 8px; background: #0b0d12; border: 1px solid #2a2f3d; border-radius: 8px; font-family: ui-monospace, monospace; font-size: 12px; }
+  .log .l { padding: 2px 0; color: #8a93a6; }
+  .log .ok { color: #6ad19a; }
+  .log .err { color: #ff7a8a; }
+  .log .you { color: #6ea8ff; }
+  .log .gpt { color: #ffcc66; }
+  .log .saa { color: #b6d4ff; }
+  .log .agent { color: #ffcc66; }
+  .log .tool { color: #c8a4ff; }
+  code { background: #1a1e2a; padding: 1px 5px; border-radius: 3px; font-size: 90%; }
+  pre { background: #0b0d12; padding: 12px; border-radius: 6px; font-size: 12px; overflow-x: auto; line-height: 1.4; }
+  .status { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0 0; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: #1a1e2a; border: 1px solid #2a2f3d; border-radius: 999px; font-size: 12px; color: #c0c8d6; font-family: ui-monospace, monospace; }
+  .badge::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #2a2f3d; }
+  .badge[data-kind="ok"]::before { background: #6ad19a; }
+  .badge[data-kind="err"]::before { background: #ff7a8a; }
+  .badge[data-kind="agent"]::before { background: #ffcc66; }
+  ul.tools { padding-left: 18px; margin: 6px 0 0; }
+  ul.tools li { margin: 4px 0; }
+  details { margin-top: 10px; }
+  details summary { cursor: pointer; color: #8a93a6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SAA + OpenAI Realtime</h1>
+  <p>This demo wires <code>@attenlabs/saa-js</code> to an OpenAI Realtime session. SAA gates which speech reaches the model &mdash; background media audio, side conversations, and your own voice during playback are filtered out before tokens are spent. Tool calling, transcripts, and barge-in are wired through.</p>
+
+  <div class="panel">
+    <h2>Camera</h2>
+    <video id="video" autoplay muted playsinline></video>
+  </div>
+
+  <div class="panel">
+    <h2>Auth mode</h2>
+    <div class="mode">
+      <label><input type="radio" name="mode" id="modeEphemeral" checked /> Ephemeral token (recommended; fetches from <code>/session</code>)</label>
+    </div>
+    <div class="mode">
+      <label><input type="radio" name="mode" id="modeBrowser" /> Browser-direct API key (dev only)</label>
+    </div>
+    <p style="margin-top: 8px; font-size: 13px;">Ephemeral mode mints a short-lived <code>client_secret</code> server-side via the included FastAPI relay (<code>server.py</code>). The OpenAI key never lands in the browser bundle. Use the dev path only when you cannot host the relay yet &mdash; see the <a href="https://platform.openai.com/docs/guides/realtime" style="color:#6ea8ff;" target="_blank">Realtime guide</a>.</p>
+
+    <label class="field" for="saaToken">SAA token</label>
+    <input id="saaToken" type="text" placeholder="SAA token (attentionlabs.ai/dashboard)" />
+
+    <label class="field" for="sessionUrl">Session endpoint</label>
+    <input id="sessionUrl" type="text" placeholder="/session" value="/session" />
+
+    <label class="field" for="openaiKey">OpenAI API key (browser-direct mode only)</label>
+    <input id="openaiKey" type="text" placeholder="sk-... or sk-proj-..." />
+
+    <button id="startBtn">Start</button>
+    <button id="stopBtn" disabled>Stop</button>
+
+    <div class="status">
+      <span class="badge">SAA: <span id="statusSas">idle</span></span>
+      <span class="badge">Agent: <span id="statusAgent">idle</span></span>
+      <span class="badge">Gate: <span id="statusGate">idle</span></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Conversation</h2>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Tools registered</h2>
+    <ul class="tools" id="toolsList"></ul>
+    <p style="margin-top: 8px; font-size: 13px;">Try saying <em>&ldquo;What&rsquo;s the weather in Berlin?&rdquo;</em> or <em>&ldquo;Set a 30 second timer.&rdquo;</em> The browser dispatches the function call locally and returns a deterministic mock; the model then speaks the result.</p>
+  </div>
+
+  <div class="panel">
+    <h2>How it works</h2>
+    <p style="margin-top: 0;">Three connections run concurrently:</p>
+    <ol>
+      <li><strong>SAA WebSocket</strong> &mdash; receives mic + webcam, returns <code>speechReady</code> events with PCM16 @ 16 kHz audio for utterances classified as <em>device-directed</em> (cls 2).</li>
+      <li><strong>OpenAI Realtime WebSocket</strong> &mdash; receives audio appended via <code>input_audio_buffer.append</code> (PCM16 @ 24 kHz) and emits text + audio responses.</li>
+      <li><strong>Local audio playback</strong> &mdash; plays the assistant&rsquo;s response. While audible output is active, wrap playout with <code>client.beginAgentOutput()</code>; hard-suppressed <code>speechReady</code> is not the barge-in signal. Use the provider interruption/cancel path or SAA <code>x-saa.interruptCandidate</code> when enabled.</li>
+    </ol>
+    <p>Per-utterance dataflow:</p>
+<pre>mic → SAA → speechReady (PCM16 16 kHz)
+            → resample 16→24 kHz
+            → OpenAI input_audio_buffer.append
+            → OpenAI response.create
+            → response.audio.delta (PCM16 24 kHz)
+            → AudioContext playback
+  barge-in: SAA emits speechReady mid-playback → response.cancel</pre>
+
+    <details>
+      <summary>Why we resample 16→24 kHz</summary>
+      <p style="margin-top: 8px;">SAA&rsquo;s <code>speechReady</code> audio is 16 kHz mono PCM16 (the SAA server&rsquo;s native rate). OpenAI Realtime&rsquo;s <code>pcm16</code> format is 24 kHz mono. Skipping the resample makes the model hear pitch-shifted, 1.5x-fast audio &mdash; transcripts degrade noticeably and tool-call accuracy drops. The conversion is one linear-interpolation pass per utterance.</p>
+    </details>
+  </div>
+</div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

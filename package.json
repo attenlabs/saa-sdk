@@ -1,0 +1,23 @@
+{
+  "name": "attenlabs-saa-monorepo",
+  "private": true,
+  "version": "0.3.0",
+  "description": "Open monorepo for the Attention Labs SAA (Selective Auditory Attention) SDKs and framework adapters.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "workspaces": [
+    "packages/saa-js",
+    "packages/saa-gate",
+    "packages/saa-proactive-js",
+    "examples/obs-overlay"
+  ],
+  "scripts": {
+    "build:js": "npm run build --workspace=@attenlabs/saa-js",
+    "test:js": "npm run build:js && node --test packages/saa-gate/tests/*.test.mjs packages/saa-proactive-js/tests/*.test.mjs examples/obs-overlay/tests/*.test.mjs",
+    "test:py": "cd packages/saa-py && python -m pytest -q tests",
+    "test": "npm run test:js && npm run test:py"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

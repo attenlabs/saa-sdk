@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Proactive voice agent · SAA × OpenAI Realtime</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: #0a0f0d; color: #e2e8f0; margin: 0; padding: 24px;
+      max-width: 720px; margin: 0 auto;
+    }
+    h1 { font-size: 1.4rem; margin: 8px 0 4px; }
+    .lede { color: #94a3b8; font-size: 0.9rem; margin-bottom: 24px; }
+    .row { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+    button {
+      background: #22c55e; color: #042008; border: 0; border-radius: 8px;
+      padding: 10px 14px; font-weight: 600; cursor: pointer; font-size: 0.95rem;
+    }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.secondary { background: #1f2937; color: #e2e8f0; }
+    .badge {
+      display: inline-block; padding: 4px 10px; border-radius: 999px;
+      font-size: 0.78rem; font-weight: 600;
+    }
+    .badge.listening { background: #1e293b; color: #94a3b8; }
+    .badge.speaking { background: #064e3b; color: #6ee7b7; }
+    .badge.thinking { background: #312e81; color: #c7d2fe; }
+    pre {
+      background: #111827; color: #e2e8f0; padding: 12px; border-radius: 8px;
+      overflow-x: auto; font-size: 0.8rem; max-height: 240px;
+    }
+    .log { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; }
+    .log .you { color: #6ee7b7; }
+    .log .gpt { color: #c7d2fe; }
+    .log .saa { color: #fbbf24; }
+    label { color: #94a3b8; font-size: 0.85rem; }
+    input[type="text"], input[type="password"] {
+      background: #111827; color: #e2e8f0; border: 1px solid #334155;
+      border-radius: 6px; padding: 8px 10px; flex: 1; font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>🗣️ Proactive voice agent</h1>
+  <p class="lede">
+    The agent speaks first. SAA gates your reply against ambient room
+    audio, Zoom calls, kids, and the agent's own TTS bleed.
+  </p>
+
+  <div class="row">
+    <label for="saaToken">SAA token:</label>
+    <input id="saaToken" type="password" autocomplete="current-password" placeholder="Paste from attentionlabs.ai/dashboard" />
+  </div>
+
+  <div class="row">
+    <button id="start">Start session</button>
+    <button id="stop" class="secondary" disabled>Stop</button>
+    <span>Agent: <span id="status-agent" class="badge listening">idle</span></span>
+    <span>SAA: <span id="status-saa" class="badge listening">idle</span></span>
+  </div>
+
+  <div class="row">
+    <label for="instructions">Proactive prompt:</label>
+    <input id="instructions" type="text" />
+  </div>
+
+  <div class="row">
+    <button id="trigger" disabled>📣 Trigger proactive turn</button>
+    <span class="lede">simulates a webhook / CRM event / build-broke notification</span>
+  </div>
+
+  <pre id="log" class="log"></pre>
+
+  <script type="module" src="./proactive.js"></script>
+</body>
+</html>

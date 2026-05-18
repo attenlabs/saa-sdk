@@ -1,0 +1,41 @@
+<!doctype html>
+<!--
+  SAA overlay × Pipecat
+  ───────────────────
+  Subscribes to the SSE endpoint that `examples/pipecat/overlay_server.py`
+  exposes (`GET /saa/decisions`). Each gate decision — pass / drop /
+  abstain / override — plus prediction snapshots, stats, and connection
+  state transitions render live in a bounded rolling window.
+
+  Drop into a Pipecat dashboard. See `examples/pipecat/README.md` for the
+  full integration story (transports, env vars, metrics, deploy).
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SAA overlay · Pipecat</title>
+  <link rel="stylesheet" href="../src/overlay.css">
+  <style>
+    body { font-family: system-ui; background: #0b1220; color: #e8eef5; margin: 0; padding: 24px; }
+    h1 { font-size: 18px; font-weight: 600; letter-spacing: .02em; margin: 0 0 16px; }
+    main { max-width: 980px; margin: 0 auto; }
+    .ol-hint { color:#7a869a; font-size:13px; margin-top:12px; }
+  </style>
+</head>
+<body data-theme="dark">
+  <main>
+    <h1>SAA · Pipecat · live decisions</h1>
+    <div id="root"></div>
+    <p class="ol-hint">
+      Streaming from <code>/saa/decisions</code> (SSE).
+      Run <code>python examples/pipecat/overlay_server.py</code> or
+      <code>make -C examples/pipecat overlay</code> upstream to start the
+      sidecar.
+    </p>
+  </main>
+  <script type="module">
+    import SaaOverlay from '../dist/saa-overlay.esm.js';
+    SaaOverlay.mount({ container: '#root', source: '/saa/decisions', theme: 'dark', visibleRows: 5 });
+  </script>
+</body>
+</html>

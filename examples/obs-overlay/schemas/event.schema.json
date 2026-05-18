@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://attentionlabs.ai/schemas/saa-overlay-event.schema.json",
+  "title": "SAA Overlay decision event",
+  "description": "Event shape consumed by @attenlabs/saa-overlay. Accepts preferred flat events or wrapped HookDecisionPayload-style envelopes from any upstream decision producer. The decision enum is a rendering-side superset: idle is a visual state, not an audit-trace decision.",
+  "oneOf": [
+    { "$ref": "#/$defs/FlatEvent" },
+    { "$ref": "#/$defs/WrappedEvent" }
+  ],
+  "$defs": {
+    "Decision": {
+      "type": "string",
+      "enum": ["pass", "drop", "abstain", "override", "idle"]
+    },
+    "Timestamp": {
+      "oneOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "number" },
+        { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$" }
+      ]
+    },
+    "OptionalString": {
+      "type": ["string", "null"]
+    },
+    "Confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "LatencyMs": {
+      "type": "number",
+      "minimum": 0
+    },
+    "FlatEvent": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id": { "$ref": "#/$defs/OptionalString" },
+        "eventId": { "$ref": "#/$defs/OptionalString" },
+        "traceId": { "$ref": "#/$defs/OptionalString" },
+        "trace_id": { "$ref": "#/$defs/OptionalString" },
+        "spanId": { "$ref": "#/$defs/OptionalString" },
+        "span_id": { "$ref": "#/$defs/OptionalString" },
+        "ts": { "$ref": "#/$defs/Timestamp" },
+        "timestamp": { "$ref": "#/$defs/Timestamp" },
+        "createdAt": { "$ref": "#/$defs/Timestamp" },
+        "created_at": { "$ref": "#/$defs/Timestamp" },
+        "time": { "$ref": "#/$defs/Timestamp" },
+        "decision": { "$ref": "#/$defs/Decision" },
+        "ruleId": { "$ref": "#/$defs/OptionalString" },
+        "rule": { "$ref": "#/$defs/OptionalString" },
+        "rule_id": { "$ref": "#/$defs/OptionalString" },
+        "command": { "type": "string" },
+        "command_preview": {
+          "description": "Preferred redacted preview for display on recorded streams.",
+          "type": "string"
+        },
+        "commandPreview": {
+          "description": "camelCase alias for command_preview.",
+          "type": "string"
+        },
+        "reason": { "type": "string" },
+        "explanation": { "type": "string" },
+        "confidence": { "$ref": "#/$defs/Confidence" },
+        "score": { "$ref": "#/$defs/Confidence" },
+        "latencyMs": { "$ref": "#/$defs/LatencyMs" },
+        "latency_ms": { "$ref": "#/$defs/LatencyMs" },
+        "durationMs": { "$ref": "#/$defs/LatencyMs" },
+        "duration_ms": { "$ref": "#/$defs/LatencyMs" },
+        "source": { "$ref": "#/$defs/OptionalString" },
+        "adapter": { "$ref": "#/$defs/OptionalString" },
+        "provider": { "$ref": "#/$defs/OptionalString" }
+      },
+      "anyOf": [
+        { "required": ["decision"] },
+        { "required": ["command"] },
+        { "required": ["command_preview"] },
+        { "required": ["commandPreview"] }
+      ]
+    },
+    "WrappedEvent": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["payload"],
+      "properties": {
+        "id": { "$ref": "#/$defs/OptionalString" },
+        "eventId": { "$ref": "#/$defs/OptionalString" },
+        "traceId": { "$ref": "#/$defs/OptionalString" },
+        "spanId": { "$ref": "#/$defs/OptionalString" },
+        "ts": { "$ref": "#/$defs/Timestamp" },
+        "timestamp": { "$ref": "#/$defs/Timestamp" },
+        "type": { "type": "string", "enum": ["hookDecision", "crossModal", "decision"] },
+        "schema": { "type": "string" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["decision"],
+          "properties": {
+            "decision": {
+              "allOf": [
+                { "$ref": "https://attentionlabs.ai/schemas/saa-trace.schema.json#/$defs/HookDecisionPayload" },
+                {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "decision": { "$ref": "#/$defs/Decision" },
+                    "confidence": { "$ref": "#/$defs/Confidence" },
+                    "latencyMs": { "$ref": "#/$defs/LatencyMs" },
+                    "source": { "$ref": "#/$defs/OptionalString" }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

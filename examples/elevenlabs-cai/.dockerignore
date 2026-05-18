@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Project
+.env
+.venv/
+venv/
+env/
+tests/
+Makefile
+pytest.ini
+test_smoke_shape.py
+README.md
+.dockerignore
+Dockerfile
+
+# Editor
+.vscode/
+.idea/
+*.swp

@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+title: "Selective Auditory Attention (SAA): SDKs and framework adapters"
+message: "If you use SAA in research or production, please cite the technical report and this repository."
+type: software
+version: 0.3.0
+date-released: 2026-05-14
+authors:
+  - name: "Attention Labs"
+    website: "https://attentionlabs.ai"
+url: "https://attentionlabs.ai"
+repository-code: "https://github.com/attenlabs/saa"
+license: Apache-2.0
+keywords:
+  - selective-auditory-attention
+  - addressee-detection
+  - device-directed-speech-detection
+  - voice-agents
+  - pre-asr-routing
+  - addressee-gate
+  - real-time
+  - multimodal
+preferred-citation:
+  type: article
+  title: "Sequential Device-Addressed Routing"
+  authors:
+    - name: "Attention Labs"
+  year: 2026
+  identifiers:
+    - type: other
+      value: "arXiv:2604.08412"
+      description: "arXiv preprint"
+  url: "https://arxiv.org/abs/2604.08412"
+  notes: "Paper uses the original 'SAS' acronym; system rebranded to 'SAA' in 2026-05. A v2 of the paper aligning the acronym is planned."

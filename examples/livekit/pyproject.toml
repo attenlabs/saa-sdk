@@ -1,0 +1,110 @@
+# Self-contained project metadata for the SAA × LiveKit Agents reference
+# adapter. Lets you `pip install -e .` or use any modern build/lint runner
+# (uv, hatch, ruff) directly out of this directory.
+
+[project]
+name = "saa-livekit-agent"
+version = "1.0.0"
+description = "SAA-gated voice agent built on LiveKit Agents, only device-directed speech reaches STT/LLM/TTS."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Attention Labs", email = "support@attentionlabs.ai" }]
+keywords = [
+  "saa",
+  "selective-auditory-attention",
+  "voice-ai",
+  "voice-agent",
+  "livekit",
+  "livekit-agents",
+  "realtime",
+  "directed-speech",
+  "pre-asr",
+  "wake-word-free",
+  "attentionlabs",
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+  "attenlabs-saa>=0.3.0,<1",
+  "livekit-agents>=1.0.0,<2.0.0",
+  "livekit-plugins-openai>=1.0.0,<2.0.0",
+  "livekit-plugins-deepgram>=1.0.0,<2.0.0",
+  "livekit-plugins-silero>=1.0.0,<2.0.0",
+  "python-dotenv>=1.0.0",
+  "numpy>=1.24",
+  # Multi-modal: encode LiveKit camera frames as JPEG before forwarding
+  # to SAA. Without Pillow the agent falls back to audio-only scoring.
+  "Pillow>=10.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.5",
+]
+serve = [
+  # Used only by serve_token.py to mint LiveKit JWTs for browser clients.
+  "livekit-api>=0.5",
+  "fastapi>=0.110",
+  "uvicorn>=0.30",
+]
+
+[project.urls]
+Homepage = "https://attentionlabs.ai"
+Documentation = "https://attentionlabs.ai/docs/"
+Repository = "https://github.com/attenlabs/saa"
+Issues = "https://github.com/attenlabs/saa/issues"
+
+[project.scripts]
+# `pip install -e . && saa-livekit-agent dev` will work just like
+# `python agent.py dev` once installed. We point at `main()` (a thin
+# wrapper around cli.run_app(WorkerOptions(...))), not at
+# `cli.run_app` directly, cli.run_app needs WorkerOptions, so a bare
+# import-and-call wouldn't run.
+saa-livekit-agent = "agent:main"
+
+# ─── ruff ──────────────────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = [".venv", "venv", "__pycache__"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM"]
+ignore = [
+  "E501",  # line length, we already keep things sane
+  "E402",  # module-level import not at top, lazy imports for optional deps
+  "SIM105",  # contextlib.suppress vs try/except, readability call
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004"]
+
+# ─── pytest ────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+  # Silence DeprecationWarnings from third-party deps; we already pin majors.
+  "ignore::DeprecationWarning",
+]
+
+# ─── build ─────────────────────────────────────────────────────────────────
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["agent.py", "saa_gate.py", "serve_token.py"]

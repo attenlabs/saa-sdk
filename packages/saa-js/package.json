@@ -1,0 +1,59 @@
+{
+  "name": "@attenlabs/saa-js",
+  "version": "0.3.0",
+  "description": "Browser JS SDK for SAA (Selective Auditory Attention). Streams microphone + webcam to the SAA cloud and emits typed events for predictions, VAD, conversation state, and speech audio ready for downstream LLM use.",
+  "author": "Attention Labs <support@attentionlabs.ai>",
+  "license": "MIT",
+  "homepage": "https://attentionlabs.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/attenlabs/saa.git",
+    "directory": "packages/saa-js"
+  },
+  "bugs": "https://github.com/attenlabs/saa/issues",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./audio-processor.js": "./dist/audio-processor.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prebuild": "node scripts/embed-worklet.mjs",
+    "build": "npx tsc && cp src/audio-processor.js dist/audio-processor.js",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "saa",
+    "selective-auditory-attention",
+    "addressee-detection",
+    "voice-ai",
+    "voice-agent",
+    "pre-asr",
+    "wake-word-free",
+    "vad",
+    "realtime",
+    "websocket",
+    "attentionlabs"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

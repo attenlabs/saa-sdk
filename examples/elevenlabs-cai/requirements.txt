@@ -1,0 +1,10 @@
+# Pinned for the v1.0 (May 19, 2026) reference relay. Loosen as new majors land.
+# Pure-Python; no compiled extensions. Python ≥ 3.10, < 3.13 because
+# `audioop` was removed in Python 3.13, the Twilio relay path uses it for
+# µ-law / 8 ↔ 16 kHz conversion. If you need 3.13, swap the audioop calls
+# for `examples/twilio/audio.py`'s pure-NumPy codec.
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.30,<1.0
+websockets>=12.0,<14.0
+attenlabs-saa>=0.3.0,<1
+python-dotenv>=1.0.0

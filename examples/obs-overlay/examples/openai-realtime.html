@@ -1,0 +1,24 @@
+<!doctype html>
+<!--
+  SAA overlay × OpenAI Realtime
+  ─────────────────────────────
+  SAA gates the mic; addressed speech streams to OpenAI Realtime as PCM16.
+  This page shows the gate's PASS / DROP decisions inline with the agent log
+  so an operator can see which utterances reached the LLM. Replace `/events`
+  with whatever SSE endpoint your gateway exposes.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SAA overlay · OpenAI Realtime</title>
+  <link rel="stylesheet" href="../src/overlay.css">
+</head>
+<body data-theme="dark">
+  <h1 style="font-family:system-ui;color:#e8eef5">SAA overlay · OpenAI Realtime</h1>
+  <main id="root"></main>
+  <script type="module">
+    import SaaOverlay from '../dist/saa-overlay.esm.js';
+    SaaOverlay.mount({ container: '#root', source: '/events', theme: 'dark', visibleRows: 5 });
+  </script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+{
+  "name": "@attenlabs/saa-overlay",
+  "version": "0.4.0",
+  "author": "Attention Labs <support@attentionlabs.ai>",
+  "description": "Zero-dependency decision flight recorder for SAA overlays, OBS, demos, and operator dashboards.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/saa-overlay.umd.cjs",
+  "module": "./dist/saa-overlay.esm.js",
+  "browser": "./dist/saa-overlay.umd.cjs",
+  "types": "./dist/saa-overlay.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/saa-overlay.d.ts",
+      "import": "./dist/saa-overlay.esm.js",
+      "require": "./dist/saa-overlay.umd.cjs",
+      "default": "./dist/saa-overlay.esm.js"
+    },
+    "./overlay.css": "./src/overlay.css",
+    "./overlay.html": "./src/overlay.html",
+    "./schema": "./schemas/event.schema.json"
+  },
+  "files": [
+    "dist/",
+    "src/",
+    "schemas/",
+    "examples/",
+    "EVENTS.md",
+    "PERFORMANCE.md",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "bench": "node scripts/bench.mjs",
+    "prepack": "node scripts/build.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "peerDependencies": {},
+  "devDependencies": {},
+  "keywords": [
+    "saa",
+    "selective-auditory-attention",
+    "attentionlabs",
+    "obs",
+    "overlay",
+    "decision-log",
+    "flight-recorder",
+    "agent-attention"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/attenlabs/saa.git",
+    "directory": "examples/obs-overlay"
+  },
+  "bugs": "https://github.com/attenlabs/saa/issues",
+  "homepage": "https://attentionlabs.ai/docs/",
+  "engines": {
+    "node": ">=20"
+  }
+}

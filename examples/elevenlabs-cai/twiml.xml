@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sample TwiML for the SAA × ElevenLabs Conversational AI relay.
+
+  Point your Twilio number's voice webhook at a URL that returns this
+  document. Twilio will then open a Media Streams WebSocket to your
+  relay; the relay puts SAA in front of an ElevenLabs CAI agent.
+
+  Replace `your-server.example.com` with the public hostname running
+  examples/elevenlabs-cai/server.py.
+
+  See https://www.twilio.com/docs/voice/twiml/stream for the full
+  <Stream> reference.
+-->
+<Response>
+  <Connect>
+    <Stream url="wss://your-server.example.com/twilio">
+      <!-- Pass any per-call metadata as <Parameter> children if you
+           need to fan out to different agents per phone number. -->
+      <Parameter name="source" value="twilio" />
+    </Stream>
+  </Connect>
+</Response>

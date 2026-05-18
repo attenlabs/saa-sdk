@@ -1,0 +1,9 @@
+# Proactive overlay on examples/livekit/. Inherits everything from the
+# parent (livekit-agents, livekit-plugins-*, attenlabs-saa) and adds
+# the HTTP sidecar.
+# Install parent deps first:
+#   pip install -r ../../livekit/requirements.txt
+# then the overlay:
+#   pip install -r requirements.txt
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.30,<1.0

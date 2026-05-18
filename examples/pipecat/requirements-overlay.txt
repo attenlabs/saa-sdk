@@ -1,0 +1,11 @@
+# Extras needed by overlay_server.py (the optional SSE shim that drives
+# @attenlabs/saa-overlay live from the gate's decision frames).
+#
+# Install on top of requirements.txt:
+#     pip install -r requirements.txt -r requirements-overlay.txt
+
+-r requirements.txt
+
+starlette>=0.40.0
+sse-starlette>=2.1.0
+uvicorn[standard]>=0.30.0

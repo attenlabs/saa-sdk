@@ -1,0 +1,61 @@
+{
+  "name": "@attenlabs/saa-proactive",
+  "version": "0.1.0",
+  "description": "Lifecycle helper for proactive voice agents on top of @attenlabs/saa-js. Wraps markResponding(true) → speak → markResponding(false) in a single 4-line API; ships a TriggerHub for back-end webhook → SSE fan-out to connected browsers.",
+  "author": "Attention Labs <support@attentionlabs.ai>",
+  "keywords": [
+    "addressee-detection",
+    "voice-agent",
+    "proactive-agent",
+    "ai-sdr",
+    "outbound-voice",
+    "speak-first",
+    "mark-responding",
+    "lifecycle",
+    "saa",
+    "attenlabs"
+  ],
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/attenlabs/saa/tree/main/packages/saa-proactive-js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/attenlabs/saa.git",
+    "directory": "packages/saa-proactive-js"
+  },
+  "bugs": "https://github.com/attenlabs/saa/issues",
+  "type": "module",
+  "main": "./src/index.js",
+  "module": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "peerDependencies": {
+    "@attenlabs/saa-js": ">=0.2.0 <2"
+  },
+  "peerDependenciesMeta": {
+    "@attenlabs/saa-js": {
+      "optional": false
+    }
+  },
+  "scripts": {
+    "test": "node --test tests/"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

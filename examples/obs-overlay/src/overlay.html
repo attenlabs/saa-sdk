@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SAA decision flight recorder</title>
+  <link rel="stylesheet" href="./overlay.css">
+</head>
+<body class="ol-body" data-theme="obs">
+  <main class="ol-stack" id="root"></main>
+  <script type="module">
+    import SaaOverlay from '../dist/saa-overlay.esm.js';
+
+    const params = new URL(location.href).searchParams;
+    const num = (key) => {
+      const value = Number(params.get(key));
+      return Number.isFinite(value) && value > 0 ? value : undefined;
+    };
+    const bool = (key) => {
+      if (!params.has(key)) return undefined;
+      return !['0', 'false', 'no'].includes(params.get(key).toLowerCase());
+    };
+
+    SaaOverlay.mount({
+      container: '#root',
+      source: params.get('source') || '/events',
+      theme: params.get('theme') || 'obs',
+      windowMs: num('windowMs'),
+      visibleRows: num('visibleRows'),
+      maxEntries: num('maxEntries'),
+      maxTextLength: num('maxTextLength'),
+      minConfidence: num('minConfidence'),
+      showStatus: bool('showStatus'),
+      dedupe: bool('dedupe'),
+      redact: bool('redact'),
+      reconnect: bool('reconnect') === false ? false : undefined,
+    });
+  </script>
+</body>
+</html>

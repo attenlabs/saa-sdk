@@ -1,0 +1,24 @@
+<!doctype html>
+<!--
+  SAA overlay × LiveKit Agents
+  ────────────────────────────
+  Server-room dashboard. SAA gates a LiveKit Agents pipeline; gate decisions
+  stream over a WebSocket and the overlay paints PASS / DROP / ABSTAIN / OVERRIDE trace rows
+  inline with the agent log. The light theme keeps the body opaque so the
+  panel doesn't look transparent on a non-OBS surface.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SAA overlay · LiveKit Agents</title>
+  <link rel="stylesheet" href="../src/overlay.css">
+</head>
+<body data-theme="light">
+  <h1 style="font-family:system-ui">SAA overlay · LiveKit Agents</h1>
+  <main id="root"></main>
+  <script type="module">
+    import SaaOverlay from '../dist/saa-overlay.esm.js';
+    SaaOverlay.mount({ container: '#root', source: 'ws://127.0.0.1:7881/saa-decisions', theme: 'light', visibleRows: 5 });
+  </script>
+</body>
+</html>

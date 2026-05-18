@@ -1,0 +1,11 @@
+# Pinned for the v1.0 (May 19, 2026) reference adapter. Loosen as new majors land.
+# These are the BASE requirements (server + LoggingBridge). For the
+# reference STT/LLM/TTS bridges:
+#   - OpenAIRealtimeBridge:                pip install 'websockets>=12' 'openai>=1.0'
+#   - DeepgramOpenAIElevenLabsBridge:      pip install 'openai>=1.0' 'deepgram-sdk>=3' 'elevenlabs>=1.0'
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.30,<1.0
+attenlabs-saa>=0.3.0,<1
+numpy>=1.24
+twilio>=9.0,<10.0
+python-dotenv>=1.0.0

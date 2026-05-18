@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "attenlabs-saa-proactive"
+version = "0.1.0"
+description = "Lifecycle helper for proactive voice agents on top of attenlabs-saa. Wraps mark_responding(True) → speak → mark_responding(False) in a single async with; ships a TriggerHub for back-end webhook → SSE fan-out to connected browsers."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+authors = [{ name = "Attention Labs", email = "support@attentionlabs.ai" }]
+keywords = [
+  "attenlabs", "saa", "addressee-detection", "voice-agent",
+  "proactive-agent", "ai-sdr", "outbound-voice", "speak-first",
+  "mark-responding", "lifecycle", "attentionlabs",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Internet :: WWW/HTTP",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
+# Zero hard runtime dependencies. attenlabs-saa is the peer; FastAPI is
+# an optional extra for the trigger-server router.
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.23.0"]
+fastapi = ["fastapi>=0.110,<1.0"]
+
+[project.urls]
+Homepage = "https://attentionlabs.ai"
+Documentation = "https://attentionlabs.ai/docs"
+Repository = "https://github.com/attenlabs/saa"
+Issues = "https://github.com/attenlabs/saa/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/saa_proactive"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/saa_proactive", "README.md", "LICENSE", "NOTICE", "tests"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

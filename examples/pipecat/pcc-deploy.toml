@@ -1,0 +1,21 @@
+# Pipecat Cloud deployment for the SAA × Pipecat reference adapter.
+#
+# Deploy with:
+#     pcc deploy
+#
+# Environment secrets live in the secret set named below, set via:
+#     pcc secrets set saa-pipecat-secrets \
+#         ATTENLABS_TOKEN=... DEEPGRAM_API_KEY=... \
+#         OPENAI_API_KEY=... CARTESIA_API_KEY=...
+#
+# Pipecat Cloud uses Daily / SmallWebRTC transports. The SAA gate runs in
+# upstream mode here: Pipecat captures audio (and optionally video) and
+# the gate forwards it via AttentionClient.feed_audio / .feed_video. STT
+# credits are spent only on directed speech.
+#
+agent_name = "saa-pipecat"
+secret_set = "saa-pipecat-secrets"
+agent_profile = "agent-1x"
+
+[scaling]
+  min_agents = 1
