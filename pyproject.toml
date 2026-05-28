@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "attenlabs-saa"
+version = "0.3.1"
+description = "Python SDK for AttentionLabs real-time attention detection."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Attention Labs" },
+]
+keywords = ["sd-attention", "attention", "saa", "audio", "video", "vad", "realtime", "websocket"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "numpy>=1.24",
+    "websocket-client>=1.6",
+    "sounddevice>=0.4.6",
+    "opencv-python>=4.8",
+]
+
+[project.urls]
+Homepage = "https://attentionlabs.ai"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/saa"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/saa",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]
