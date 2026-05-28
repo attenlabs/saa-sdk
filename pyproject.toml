@@ -7,7 +7,7 @@ name = "saa-livekit-client"
 version = "0.1.0"
 description = "LiveKit client for the saa hosted bridge — consume attention/interrupt/interjection events inside your voice agent."
 requires-python = ">=3.10"
-license = { text = "Proprietary" }
+license = { text = "Apache-2.0" }
 authors = [
     { name = "Attention Labs" },
 ]
