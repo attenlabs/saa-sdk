@@ -1,0 +1,11 @@
+# tested against livekit-agents 1.5.12
+livekit-agents>=1.5
+livekit-plugins-silero
+livekit-plugins-deepgram
+livekit-plugins-openai
+livekit-plugins-cartesia
+
+# SAA LiveKit hosted-bridge client
+# for local dev against this repo, install the in-tree copy instead:
+#   pip install -e ../../../packages/saa-livekit-client
+saa-livekit-client>=0.1.0
