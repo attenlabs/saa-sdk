@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SAA + LiveKit demo</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="root">
+      <header>
+        <h1>SAA + LiveKit</h1>
+        <span id="status" class="status">disconnected</span>
+      </header>
+
+      <div id="prediction" data-class="0">
+        <div id="class-label">--</div>
+        <div id="conf-bar"><div id="conf-fill"></div></div>
+        <div id="meta">
+          <span id="vad">VAD: off</span>
+          <span id="faces">faces: 0</span>
+        </div>
+      </div>
+
+      <div id="video-container">
+        <video id="local-video" autoplay muted playsinline></video>
+      </div>
+
+      <div class="controls">
+        <button id="btn-start">Start</button>
+        <button id="btn-stop" disabled>Stop</button>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

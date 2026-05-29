@@ -1,0 +1,9 @@
+# dev token server only — no livekit-agents needed
+livekit-api>=1.0
+fastapi>=0.110
+uvicorn>=0.27
+
+# SAA LiveKit hosted-bridge client
+# for local dev against this repo, install the in-tree copy instead:
+#   pip install -e ../../../packages/saa-livekit-client
+saa-livekit-client>=0.1.0
