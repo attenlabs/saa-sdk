@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "saa-pipecat-client"
+version = "0.1.0"
+description = "Pipecat / Daily client for the saa hosted bridge — consume attention/interrupt/interjection events inside your voice agent."
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Attention Labs" },
+]
+readme = "README.md"
+keywords = ["pipecat", "daily", "voice-agent", "attention", "vad", "turn-detection"]
+dependencies = [
+    "pipecat-ai[daily]>=1.0.0,<2",
+    "daily-python>=0.19.0,<1",
+    "httpx>=0.25",
+    "requests>=2.31",
+]
+
+[project.urls]
+Homepage = "https://attentionlabs.ai"
+Documentation = "https://attentionlabs.ai/docs/daily"
+
+[tool.setuptools]
+packages = ["saa_pipecat_client"]
+
+[tool.setuptools.package-dir]
+saa_pipecat_client = "."
