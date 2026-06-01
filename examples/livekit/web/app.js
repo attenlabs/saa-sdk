@@ -8,7 +8,6 @@ const TOKEN_ENDPOINT = "/token";
 const SAA_TOPIC = "saa";
 
 let room = null;
-let agentIdentity = null;
 
 document.getElementById("btn-start").onclick = start;
 document.getElementById("btn-stop").onclick = stop;
@@ -17,17 +16,26 @@ async function start() {
   const roomName = `saa-demo-${Date.now()}`;
   const identity = `user-${Math.random().toString(36).slice(2, 8)}`;
 
-  // fetch a join token + summon the SAA agent for this room
+  // fetch a browser join token (SAA is summoned by the voice agent in the room)
   const resp = await fetch(`${TOKEN_ENDPOINT}?room=${roomName}&identity=${identity}`);
-  const { url, token, agent_identity } = await resp.json();
-  agentIdentity = agent_identity;
+  const { url, token } = await resp.json();
 
   room = new Room({ adaptiveStream: true, dynacast: true });
   room.on(RoomEvent.DataReceived, onData);
   room.registerByteStreamHandler(SAA_TOPIC, onByteStream);
+  // play the voice agent's audio when it joins (SAA's hidden agent is data-only,
+  
+  room.on(RoomEvent.TrackSubscribed, (track) => {
+    if (track.kind === Track.Kind.Audio) {
+      const el = track.attach();
+      el.autoplay = true;
+      document.body.appendChild(el);
+      setStatus("agent connected");
+    }
+  });
 
   await room.connect(url, token);
-  setStatus("connected");
+  setStatus("waiting for agent…");
 
   // publish cam + mic (SAA is multimodal — it wants both)
   const tracks = await createLocalTracks({
@@ -45,10 +53,9 @@ async function start() {
   document.getElementById("btn-stop").disabled = false;
 }
 
-function onData(payload, participant, _kind, topic) {
+function onData(payload, _participant, _kind, topic) {
+  // hidden SAA sender — the participant may be null; trust the topic scope
   if (topic !== SAA_TOPIC) return;
-  // hidden sender — participant may be null, trust the topic scope
-  if (participant && agentIdentity && participant.identity !== agentIdentity) return;
 
   const msg = JSON.parse(new TextDecoder().decode(payload));
   switch (msg.type) {
