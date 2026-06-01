@@ -28,6 +28,7 @@ pip install -r requirements.txt
 pip install -e ../../../packages/saa-livekit-client   # local dev against this repo
 
 cp .env.example .env   # then fill in the keys
+set -a && source .env && set +a
 
 python agent.py dev
 ```
