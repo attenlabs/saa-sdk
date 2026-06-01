@@ -23,6 +23,38 @@ No model weights, no ML dependencies, and no media ever enter your process — t
 
 All target **LiveKit Agents 1.5.x** using the `AgentServer` + `@server.rtc_session()` shape. (`WorkerOptions(entrypoint_fnc=...)` also works on 1.5.x and is the older idiom.)
 
+## Quick start — realtime agent + web client
+
+Talk to a SAA-gated OpenAI Realtime agent in your browser. Two terminals, one shared `.env`.
+
+```bash
+cd examples/livekit
+cp .env.example .env     # fill LIVEKIT_*, SAA_API_KEY, OPENAI_API_KEY (see Shared environment)
+```
+
+**Terminal 1 — the realtime voice agent** (owns SAA, auto-joins new rooms):
+
+```bash
+cd examples/livekit/voice_agent_realtime
+pip install -e ../../../packages/saa-livekit-client
+pip install -r requirements.txt
+set -a && source ../.env && set +a
+python agent.py dev
+```
+
+**Terminal 2 — the web client** (mints a join token, renders the overlay):
+
+```bash
+cd examples/livekit/web
+pip install -r requirements.txt
+set -a && source ../.env && set +a
+uvicorn token_server:app --port 8000
+```
+
+Open <http://localhost:8000> and click **Start**. The browser creates a room, the realtime agent auto-joins and summons SAA, and you're talking — it answers only when you address it, and the pill goes green at exactly those moments. Status shows `waiting for agent…` until the agent's audio arrives.
+
+> Start the agent **before** clicking Start, so it's registered for the room dispatch. Both halves use the same LiveKit project by construction (the one shared `.env`).
+
 ## Shared environment
 
 All samples read **one** env file — [`.env`](./.env.example) in this directory — so `LIVEKIT_*` (which the browser and the agent must share) lives in exactly one place and can't drift.
