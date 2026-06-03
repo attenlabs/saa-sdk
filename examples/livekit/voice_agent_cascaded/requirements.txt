@@ -4,6 +4,7 @@ livekit-plugins-silero
 livekit-plugins-deepgram
 livekit-plugins-openai
 livekit-plugins-cartesia
+python-dotenv>=1.0
 
 # SAA LiveKit hosted-bridge client
 # for local dev against this repo, install the in-tree copy instead:

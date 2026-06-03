@@ -24,14 +24,11 @@ That last block matters: SAA's interrupt detector only arms while it believes th
 
 ```bash
 cd examples/livekit/voice_agent_cascaded
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
 
 pip install -r requirements.txt
 # local dev against this repo's copy of the client:
 pip install -e ../../../packages/saa-livekit-client
-
-# shared env one dir up — cp ../.env.example ../.env and fill it in once
-set -a && source ../.env && set +a
 
 python src/agent.py dev   # dev mode auto-dispatches the agent to new rooms
 ```

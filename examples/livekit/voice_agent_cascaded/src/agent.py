@@ -15,6 +15,12 @@ from saa_livekit_client import (
     start_attention_session,
 )
 
+from pathlib import Path
+from dotenv import load_dotenv
+
+# auto-load the shared examples/livekit/.env
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+
 logger = logging.getLogger("voice-agent-cascaded")
 
 
@@ -50,6 +56,9 @@ async def entrypoint(ctx: JobContext) -> None:
         ),
         room_name=ctx.room.name,
         participant_identity=user.identity,
+        # this sample gates on predictions and never reads turn audio/frames, so
+        # don't ship per-turn JPEG frames (less bandwidth, fewer stream chunks)
+        attention_config={"frames_per_turn": 0},
     )
     ctx.add_shutdown_callback(saa.stop)
 
