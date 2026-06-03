@@ -73,14 +73,23 @@ async function start() {
   }
 }
 
-// map getUserMedia / createLocalTracks failures to a human-readable hint
 function mediaErrorMessage(e) {
-  switch (e && e.name) {
-    case "NotAllowedError": return "camera/mic permission denied — allow access and click Start again";
-    case "NotFoundError": return "no camera/mic found — connect a device and retry";
-    case "NotReadableError": return "camera/mic is in use by another app — close it and retry";
-    case "OverconstrainedError": return "requested camera resolution unsupported on this device";
-    default: return `camera/mic error: ${e && e.message ? e.message : e}`;
+  const name = (e && (e.name || e.code)) || "";
+  switch (name) {
+    case "NotAllowedError":
+    case "PermissionDeniedError":
+      return "camera/mic permission denied — allow access and click Start again";
+    case "NotFoundError":
+    case "DevicesNotFoundError":
+      return "no camera/mic found — connect a device and retry";
+    case "NotReadableError":
+    case "TrackStartError":
+      return "camera/mic is in use by another app — close it and retry";
+    case "OverconstrainedError":
+    case "ConstraintNotSatisfiedError":
+      return "requested camera resolution unsupported on this device";
+    default:
+      return `camera/mic error: ${(e && e.message) || name || e}`;
   }
 }
 
@@ -153,7 +162,9 @@ function setStatus(s, isError = false) {
 }
 
 async function stop() {
-  if (room) await room.disconnect();
+  if (room) {
+    try { await room.disconnect(); } catch (_) {}
+  }
   room = null;
   setStatus("disconnected");
   document.getElementById("btn-start").disabled = false;
