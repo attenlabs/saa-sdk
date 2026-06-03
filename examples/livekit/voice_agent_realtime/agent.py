@@ -19,6 +19,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # auto-load the shared examples/livekit/.env
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
 logger = logging.getLogger("voice-agent-realtime")
 
 
