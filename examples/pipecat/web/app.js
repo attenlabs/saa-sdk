@@ -20,15 +20,66 @@ document.getElementById("btn-start").onclick = start;
 document.getElementById("btn-stop").onclick = stop;
 
 async function start() {
+  // f a previous start() failed mid-flight, the old call object
+  // may still be alive and daily-js refuses a second createCallObject().
+  // Destroy any leftover before creating a fresh one.
+  if (call) {
+    try { await call.leave(); } catch (_) {}
+    try { call.destroy(); } catch (_) {}
+    call = null;
+  }
+
+  setStatus("requesting session");
+  document.getElementById("btn-start").disabled = true;
+
   // fetch a Daily room + user token + summon the SAA bot for this session
-  const resp = await fetch(SESSION_ENDPOINT);
-  const { room_url, user_token, agent_identity } = await resp.json();
+  let payload;
+  try {
+    const resp = await fetch(SESSION_ENDPOINT);
+    if (!resp.ok) {
+      const body = await resp.text();
+      throw new Error(`/session ${resp.status}: ${body}`);
+    }
+    payload = await resp.json();
+  } catch (e) {
+    setStatus("error: /session failed");
+    showError(
+      `Could not start a session: ${e.message}\n\n` +
+      `Check that token_server.py is running and DAILY_API_KEY + SAA_API_KEY ` +
+      `are set in .env.`,
+    );
+    document.getElementById("btn-start").disabled = false;
+    return;
+  }
+  const { room_url, user_token, agent_identity, voice_agent_enabled, voice_agent_missing_env } = payload;
+  if (!room_url || !user_token) {
+    setStatus("error: bad /session response");
+    showError(
+      `/session returned an unusable response: ${JSON.stringify(payload)}\n\n` +
+      `Expected {room_url, user_token, agent_identity}.`,
+    );
+    document.getElementById("btn-start").disabled = false;
+    return;
+  }
   agentIdentity = agent_identity;
   agentSessionId = null;
 
+  // Surface whether the voice agent is enabled this session saves a
+  // tester from wondering why nothing's talking back.
+  if (voice_agent_enabled) {
+    setMode("with voice agent");
+  } else {
+    setMode(
+      "overlay only" +
+      (voice_agent_missing_env?.length
+        ? `- missing ${voice_agent_missing_env.join(", ")}`
+        : ""),
+    );
+  }
+
   // call-object mode (no iframe). subscribeToTracksAutomatically lets us
-  // receive any other participant's media (incl. an eventual voice agent)
-  // without manually managing subscriptions.
+  // receive any other participant's media (also voice agent) without
+  // manually managing subscriptions.
   call = window.DailyIframe.createCallObject({
     subscribeToTracksAutomatically: true,
   });
@@ -39,20 +90,49 @@ async function start() {
   call.on("participant-updated", onParticipantUpdated);
   call.on("left-meeting", () => setStatus("disconnected"));
 
-  // start both tracks
-  await call.join({
-    url: room_url,
-    token: user_token,
-    startVideoOff: false,
-    startAudioOff: false,
-  });
+  try {
+    // start both tracks
+    await call.join({
+      url: room_url,
+      token: user_token,
+      startVideoOff: false,
+      startAudioOff: false,
+    });
+  } catch (e) {
+    setStatus("error: join failed");
+    showError(`Daily join() failed: ${e.message}`);
+    try { call.destroy(); } catch (_) {}
+    call = null;
+    document.getElementById("btn-start").disabled = false;
+    return;
+  }
   setStatus("connected");
+  clearError();
 
   // resolve agent session_id in case it's already in the room
   resolveAgentSessionId();
 
-  document.getElementById("btn-start").disabled = true;
   document.getElementById("btn-stop").disabled = false;
+}
+
+function showError(msg) {
+  let el = document.getElementById("error-banner");
+  if (!el) {
+    el = document.createElement("pre");
+    el.id = "error-banner";
+    el.style.cssText =
+      "white-space: pre-wrap; background: #2a0e0e; color: #ffb4b4; " +
+      "padding: 12px; border-radius: 8px; margin: 12px 0; font-size: 12px;";
+    document.getElementById("root").insertBefore(
+      el, document.querySelector(".controls"),
+    );
+  }
+  el.textContent = msg;
+}
+
+function clearError() {
+  const el = document.getElementById("error-banner");
+  if (el) el.remove();
 }
 
 function onTrackStarted(ev) {
@@ -160,7 +240,7 @@ function appendChunk(msg) {
   p.gathered += 1;
   if (p.gathered < p.envelope.total_chunks) return;
 
-  // all chunks in — concat into one buffer and decode
+  // all chunks in concat into one buffer and decode
   let total = 0;
   for (const c of p.chunks) total += c.length;
   const buf = new Uint8Array(total);
@@ -210,6 +290,18 @@ function renderVAD(v) {
 
 function setStatus(s) {
   document.getElementById("status").textContent = s;
+}
+
+function setMode(s) {
+  let el = document.getElementById("mode");
+  if (!el) {
+    el = document.createElement("span");
+    el.id = "mode";
+    el.className = "status";
+    el.style.marginLeft = "8px";
+    document.getElementById("status").after(el);
+  }
+  el.textContent = s;
 }
 
 async function stop() {
