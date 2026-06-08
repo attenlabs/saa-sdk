@@ -32,7 +32,9 @@ The token_server logs which mode it's in on startup, and the UI's header shows i
 
 ```bash
 cd examples/pipecat/web
-python -m venv .venv && source .venv/bin/activate
+
+# Python 3.11+ is required: pipecat-ai 1.x dropped 3.10 support
+python3.11 -m venv .venv && source .venv/bin/activate
 
 # install the in-tree client FIRST so the requirements.txt version spec
 # resolves locally — saa-pipecat-client is not on PyPI yet

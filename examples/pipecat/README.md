@@ -23,6 +23,8 @@ No model weights, no ML dependencies, and no media ever enter your process — t
 
 All target **pipecat-ai >= 1.0.0** (the `pipecat.transports.daily.transport` canonical import path; the legacy `pipecat.transports.services.daily` alias was removed in 1.0.0) and **daily-python >= 0.19.0** (current 3-arg renderer-callback signature + `canReceive` enforcement).
 
+**Python 3.11+ is required.** pipecat-ai 1.x dropped Python 3.10 support
+
 ## Shared environment
 
 Every sample needs the SAA + Daily credentials:
