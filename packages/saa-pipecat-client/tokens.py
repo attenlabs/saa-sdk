@@ -73,16 +73,7 @@ def attention_agent_token(
             "permissions": {
                 "hasPresence": False,
                 "canSend": False,
-                "canReceive": {
-                    "base": {
-                        "audio": True,
-                        "video": True,
-                        "screenAudio": True,
-                        "screenVideo": True,
-                        "customAudio": True,
-                        "customVideo": True,
-                    },
-                },
+                "canReceive": {"base": True},
             },
         },
     }
