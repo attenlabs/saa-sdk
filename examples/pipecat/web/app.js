@@ -53,6 +53,9 @@ async function start() {
     return;
   }
   const { room_url, user_token, agent_identity, voice_agent_enabled, voice_agent_missing_env } = payload;
+  
+  console.log("[saa] voice agent enabled?", voice_agent_enabled, "missing env?", voice_agent_missing_env);
+
   if (!room_url || !user_token) {
     setStatus("error: bad /session response");
     showError(

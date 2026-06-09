@@ -24,7 +24,7 @@ from pipecat.frames.frames import (
     TTSStoppedFrame,
 )
 
-from saa_pipecat_client import AttentionEngine
+from saa_pipecat_client import AttentionEngine, AttentionStartupError
 
 logger = logging.getLogger("web.voice_agent")
 
@@ -137,9 +137,29 @@ async def run_voice_agent(
             ]
         )
 
+    @engine.on_error
+    def _(ev) -> None:
+        logger.warning("SAA error [%s]: %s", ev.code, ev.message)
+
     @transport.event_handler("on_first_participant_joined")
     async def _on_first_participant_joined(transport_, participant):
-        await engine.start()
+        # engine.start() waits for the bot's "started" handshake. It now fails
+        # fast with AttentionStartupError if the bot publishes an error first,
+        # or TimeoutError if the bot never reports in — either way tear the
+        # agent down cleanly instead of leaking an uncaught event-handler exc.
+        try:
+            await engine.start()
+        except AttentionStartupError as e:
+            logger.error("SAA bot failed to start (%s) — stopping voice agent", e)
+            await task.cancel()
+            return
+        except asyncio.TimeoutError:
+            logger.error(
+                "SAA bot never published 'started' — stopping voice agent for room=%s",
+                room_url,
+            )
+            await task.cancel()
+            return
         logger.info(
             "SAA gating active for room=%s (saa_agent=%s, model=%s)",
             room_url, saa_agent_identity, model,
