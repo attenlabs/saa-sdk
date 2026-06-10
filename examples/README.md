@@ -31,15 +31,24 @@ The Pipecat sibling. SAA joins your Daily room as a hidden participant and publi
 
 Targets **pipecat-ai >= 1.0.0** (the `pipecat.transports.daily.transport` canonical import path) and **daily-python >= 0.19.0**. See [`pipecat/README.md`](./pipecat/README.md) for the shared environment.
 
+## ElevenLabs Conversational AI
+
+ElevenLabs runs its agent inside its own sealed WebRTC room, so this sample uses the **streaming SDK's `feed_audio` ingestion**: it taps ElevenLabs' Python `AudioInterface` (the clean PCM seam), feeds the user mic to the SAA cloud, and gates the agent on the events that come back. 
+
+| Sample | What it shows | Run |
+|---|---|---|
+| [`elevenlabs/voice_agent/`](./elevenlabs/voice_agent) | SAA gating an ElevenLabs Conversational AI agent — only device-directed speech reaches the model — via `attenlabs-saa`'s `feed_audio`. | `python agent.py` |
+
+Needs **attenlabs-saa >= 0.4.0** (the `feed_audio` API) and **elevenlabs >= 2.45**.
+
 ## Roadmap
 
-Packaged drop-in adapters for the stacks below are planned. They depend on an external-frame ingestion API landing in `attenlabs-saa` (so SAA can consume audio a framework already captured); until then these stacks are reachable by wiring the streaming SDK yourself.
+`attenlabs-saa` ships `feed_audio` (external-frame ingestion), so any stack that already captures audio can be gated by feeding SAA
 
 | Stack | Shape |
 |---|---|
-| Twilio Media Streams | μ-law 8 kHz → PCM16 telephony bridge |
+| Twilio Media Streams | μ-law 8 kHz → PCM16 telephony bridge (`feed_audio(..., sample_rate=8000)`) |
 | OpenAI Realtime | browser/edge gating of a realtime model |
-| ElevenLabs Conversational AI | WebRTC gating |
 | Proactive-agent overlays | per-stack `mark_responding` lifecycle recipes |
 
 ## Conventions
