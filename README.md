@@ -8,9 +8,9 @@ Every voice pipeline has the same problem: the microphone hears everything, but 
 
 ## Sign up
 
-Get your API token at [attentionlabs.ai/dashboard](https://attentionlabs.ai/dashboard). 
+Get your API key at [attentionlabs.ai](https://attentionlabs.ai).
 
-**You need your API Key for this project to work**
+**You need your API key for this project to work**
 
 ## Install
 
@@ -33,11 +33,11 @@ def _(event):
     label = {0: "silent", 1: "human", 2: "device"}.get(event.cls, "?")
     print(f"{label}  {event.confidence:.0%}  faces={event.num_faces}  src={event.source}")
 
-@client.on_speech_ready
-def _(event):
-    # event.audio_base64 — base64 PCM16 @ 16 kHz mono, ready for OpenAI Realtime / any LLM
-    # event.audio_pcm16  — same audio as np.int16 array
-    print(f"speech ready ({event.duration_sec:.2f}s)")
+@client.on_turn_ready
+def _(turn):
+    # turn.audio_base64 — base64 PCM16 @ 16 kHz mono, ready for OpenAI Realtime / any LLM
+    # turn.audio_pcm16  — same audio as np.int16 array
+    print(f"turn ready ({turn.duration_sec:.2f}s)")
 
 @client.on_error
 def _(event):
@@ -101,6 +101,21 @@ client = AttentionClient(
 | `unmute()`                   | Resumes upstream audio. |
 | `mark_responding(bool)`      | Tell the server an LLM response is in flight. Server stops emitting predictions while `True`. |
 | `set_threshold(value: float)` | Update device-class confidence threshold (0..1). Server acks via `config` event. |
+| `feed_audio(audio, *, sample_rate=16000)` | Stream audio captured by another stack instead of the SDK's own mic. Requires `enable_audio=False`. See [Feeding external audio](#feeding-external-audio). |
+
+### Feeding external audio
+
+When another stack already owns the microphone — an ElevenLabs / OpenAI Realtime `AudioInterface` tap, a Twilio media stream, a game engine — construct the client with `enable_audio=False` and push frames in with `feed_audio()` instead of letting the SDK open its own mic:
+
+```python
+client = AttentionClient(token="...", enable_audio=False, enable_video=False)
+client.start()                       # opens the WebSocket; captures nothing itself
+
+# in your existing audio callback (any chunk size, mono):
+client.feed_audio(pcm_chunk)         # bytes (int16 LE), np.int16, or np.float32 [-1, 1]
+```
+
+`feed_audio` accepts arbitrary chunk sizes and re-chunks internally to the wire's 100 ms blocks; pass `sample_rate=` if your audio isn't already 16 kHz and it'll resample. Calling it while `enable_audio=True` raises (that would double the audio source). A runnable ElevenLabs Conversational AI example lives in [`saa-sdk/examples/elevenlabs`](https://github.com/attenlabs/saa-sdk/tree/main/examples/elevenlabs).
 
 ### Events
 
@@ -120,7 +135,7 @@ def handle(event):
 | `@on_prediction`      | `PredictionEvent`                                                        | Each attention prediction               |
 | `@on_vad`             | `VadEvent`                                                               | Voice activity update                   |
 | `@on_state`           | `StateEvent`                                                             | Conversation state transition           |
-| `@on_speech_ready`    | `SpeechReadyEvent`                                                       | Complete speech segment ready to forward |
+| `@on_turn_ready`      | `TurnReadyEvent`                                                         | Complete user turn ready to forward     |
 | `@on_config`          | `ConfigEvent`                                                            | Server acks a threshold change          |
 | `@on_stats`           | `StatsEvent`                                                             | Every ~10s with connection health       |
 | `@on_interrupt`       | `InterruptEvent`                                                         | User is barging in mid-LLM-response     |
@@ -151,12 +166,13 @@ is_speech: bool     # whether speech was detected
 state: ConversationState  # "listening" | "sending" | "cancelled" | "idle"
 ```
 
-#### `SpeechReadyEvent`
+#### `TurnReadyEvent`
 
 ```python
 audio_pcm16: np.ndarray   # int16 array @ 16 kHz mono
 audio_base64: str          # same audio as base64 — ready for OpenAI Realtime, etc.
 duration_sec: float        # duration in seconds
+frames: list[TurnFrame]    # JPEG stills, empty unless the server has frames_per_turn > 0
 ```
 
 #### `ConfigEvent`
@@ -212,7 +228,7 @@ was_clean: bool  # True if code == 1000
 
 ## LLM integration
 
-LLM routing is intentionally **not** part of the SDK. The `speech_ready` event hands you PCM16 audio — both as a NumPy array and as base64 — forward it wherever you like.
+LLM routing is intentionally **not** part of the SDK. The `turn_ready` event hands you PCM16 audio — both as a NumPy array and as base64 — forward it wherever you like.
 
 When your LLM starts generating, call `mute()` + `mark_responding(True)` to suppress predictions during playback. When it finishes, `unmute()` + `mark_responding(False)`.
 
@@ -221,10 +237,10 @@ from saa import AttentionClient
 
 client = AttentionClient(token="...")
 
-@client.on_speech_ready
-def _(event):
+@client.on_turn_ready
+def _(turn):
     # Forward to your LLM of choice
-    your_llm.send(event.audio_base64)
+    your_llm.send(turn.audio_base64)
 
 def on_llm_speaking():
     client.mute()
@@ -274,4 +290,4 @@ All event callbacks fire on `saa-ws` or `saa-heartbeat`. Don't block them — of
 
 ## License
 
-MIT
+Apache-2.0

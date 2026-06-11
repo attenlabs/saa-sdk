@@ -25,6 +25,7 @@ from .events import (
     AttentionErrorEvent,
     ConfigEvent,
     DisconnectedEvent,
+    InterjectionEvent,
     InterruptEvent,
     PredictionEvent,
     StateEvent,
@@ -122,6 +123,7 @@ class AttentionClient:
     def on_config(self, func: Listener) -> Listener: return self._register("config", func)
     def on_stats(self, func: Listener) -> Listener: return self._register("stats", func)
     def on_interrupt(self, func: Listener) -> Listener: return self._register("interrupt", func)
+    def on_interjection(self, func: Listener) -> Listener: return self._register("interjection", func)
     def on_error(self, func: Listener) -> Listener: return self._register("error", func)
     def on_disconnected(self, func: Listener) -> Listener: return self._register("disconnected", func)
 
@@ -412,14 +414,17 @@ class AttentionClient:
             if cls is None:
                 cls = 0
             conf = msg.get("confidence") or 0.0
+
             if not self._warmed_up and conf > 0:
                 self._warmed_up = True
                 self._emit("warmup_complete")
+            source = msg.get("source") or ""
             self._emit("prediction", PredictionEvent(
                 cls=int(cls),
                 confidence=float(conf),
-                source=msg.get("source") or "",
+                source=source,
                 num_faces=int(msg.get("num_faces") or 0),
+                responding=bool(msg.get("responding", source == "ai_responding")),
             ))
         elif t == "vad":
             self._emit("vad", VadEvent(
@@ -447,14 +452,20 @@ class AttentionClient:
                 for f in raw_frames
                 if isinstance(f, dict) and f.get("image_base64")
             ]
+            ctx = msg.get("context")
             self._emit("turn_ready", TurnReadyEvent(
                 audio_pcm16=_b64_to_int16(b64),
                 audio_base64=b64,
                 duration_sec=float(msg.get("duration") or 0.0),
                 frames=frames,
+                context=str(ctx) if isinstance(ctx, str) else None,
             ))
         elif t == "started":
             self._emit("started")
+            # `started` is the actual warmup-complete
+            if not self._warmed_up:
+                self._warmed_up = True
+                self._emit("warmup_complete")
             self._send_control({"action": "set_threshold", "value": self.threshold})
         elif t == "config":
             thr = msg.get("model_class2_threshold")
@@ -467,6 +478,14 @@ class AttentionClient:
             self._emit("interrupt", InterruptEvent(
                 fade_ms=int(fade_ms_raw) if isinstance(fade_ms_raw, (int, float)) else 500,
                 confidence=float(conf_raw) if isinstance(conf_raw, (int, float)) else 0.85,
+            ))
+        elif t == "interjection":
+            b64 = msg.get("audio_base64") or ""
+            self._emit("interjection", InterjectionEvent(
+                reason=msg.get("reason") or "",
+                audio_pcm16=_b64_to_int16(b64),
+                audio_base64=b64,
+                duration_sec=float(msg.get("duration_s") or 0.0),
             ))
         elif t == "error":
             self._emit("error", AttentionErrorEvent(

@@ -14,6 +14,7 @@ class PredictionEvent:
     confidence: float
     source: str
     num_faces: int
+    responding: bool = False  # True while the AI is mid-playback
 
 
 @dataclass
@@ -46,6 +47,7 @@ class TurnReadyEvent:
     duration_sec: float
     frames: list[TurnFrame] = field(default_factory=list)
     """Empty unless the server has frames_per_turn > 0."""
+    context: Optional[str] = None  # e.g. "interjection_follow_up"; None for normal turns
 
 
 @dataclass
@@ -70,6 +72,20 @@ class InterruptEvent:
     """
     fade_ms: int        # suggested fade duration before stopping playback
     confidence: float   # raw model confidence of the firing class-2 prediction
+
+
+@dataclass
+class InterjectionEvent:
+    """Proactive AI volunteer — humans chatted then went quiet (P3 pattern).
+
+    The server's InterjectionDetector fired: recent conversation audio is
+    handed back so the consumer can prompt its LLM for a brief volunteer.
+    The SDK already self-marked its cooldown clock; no upstream ack needed.
+    """
+    reason: str
+    audio_pcm16: np.ndarray  # int16, 16 kHz mono
+    audio_base64: str
+    duration_sec: float
 
 
 @dataclass

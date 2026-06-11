@@ -9,6 +9,7 @@ from .events import (
     ConfigEvent,
     ConversationState,
     DisconnectedEvent,
+    InterjectionEvent,
     InterruptEvent,
     PredictionEvent,
     StateEvent,
@@ -30,9 +31,10 @@ __all__ = [
     "ConfigEvent",
     "StatsEvent",
     "InterruptEvent",
+    "InterjectionEvent",
     "AttentionErrorEvent",
     "DisconnectedEvent",
     "ConversationState",
 ]
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
