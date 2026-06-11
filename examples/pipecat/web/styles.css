@@ -7,6 +7,7 @@
   --class-0: #6b7c7c; /* silent */
   --class-1: #f5c518; /* human-to-human */
   --class-2: #2ecc71; /* talking to device */
+  --responding: #4aa8ff; /* AI is speaking back */
 }
 
 * {
@@ -43,28 +44,43 @@ header h1 {
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  text-align: right;
+  max-width: 60%;
+}
+
+.status.error {
+  color: #ff5c5c;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
 }
 
 #prediction {
+  --state: var(--class-0);
   margin: 20px 0;
   padding: 20px;
   border-radius: 12px;
   background: #0b1517;
   border: 1px solid #16262a;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-#prediction[data-class="1"] {
-  border-color: var(--class-1);
-}
+#prediction[data-class="1"] { --state: var(--class-1); }
+#prediction[data-class="2"] { --state: var(--class-2); }
+#prediction[data-responding="true"] { --state: var(--responding); }
 
-#prediction[data-class="2"] {
-  border-color: var(--class-2);
+#prediction[data-class="1"],
+#prediction[data-class="2"],
+#prediction[data-responding="true"] {
+  border-color: var(--state);
+  box-shadow: 0 8px 28px -18px var(--state);
 }
 
 #class-label {
   font-size: 28px;
   font-weight: 700;
+  color: var(--state);
+  transition: color 0.15s ease;
 }
 
 #conf-bar {
@@ -78,8 +94,8 @@ header h1 {
 #conf-fill {
   height: 100%;
   width: 0%;
-  background: var(--accent);
-  transition: width 0.12s linear;
+  background: var(--state);
+  transition: width 0.12s linear, background 0.15s ease;
 }
 
 #meta {
