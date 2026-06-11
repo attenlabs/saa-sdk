@@ -12,7 +12,15 @@ from typing import Any, Callable, Optional
 import numpy as np
 import websocket
 
-from .capture import CameraCapture, CameraConfig, MicCapture, MicConfig
+from .capture import (
+    SEND_INTERVAL_SAMPLES,
+    TARGET_AUDIO_RATE,
+    CameraCapture,
+    CameraConfig,
+    MicCapture,
+    MicConfig,
+    _linear_downsample,
+)
 from .events import (
     AttentionErrorEvent,
     ConfigEvent,
@@ -86,6 +94,12 @@ class AttentionClient:
         self._stats_thread: Optional[threading.Thread] = None
         self._stats_stop = threading.Event()
         self._started = False
+
+        # External-feed mode (enable_audio=False + feed_audio()): re-chunks
+        # arbitrary-sized fed audio into the same 100 ms blocks the mic path
+        # produces, so the server sees an identical cadence either way.
+        self._feed_buffer = np.zeros(0, dtype=np.float32)
+        self._feed_lock = threading.Lock()
 
         self._sent_audio = 0
         self._sent_video = 0
@@ -174,6 +188,8 @@ class AttentionClient:
         self._started = False
         self._warmed_up = False
         self._muted = False
+        with self._feed_lock:
+            self._feed_buffer = np.zeros(0, dtype=np.float32)
 
     # ── control ───────────────────────────────────────────────────
 
@@ -198,6 +214,52 @@ class AttentionClient:
         value = _clamp01(value)
         self.threshold = value
         self._send_control({"action": "set_threshold", "value": value})
+
+    # ── external feed (bring-your-own-capture) ────────────────────
+
+    def feed_audio(self, audio: Any, *, sample_rate: int = TARGET_AUDIO_RATE) -> None:
+        """Stream externally-captured audio instead of the SDK's own mic.
+
+        Use this when another stack already owns the microphone — e.g. an
+        ElevenLabs / OpenAI Realtime ``AudioInterface`` tap, or a Twilio media
+        stream. Construct the client with ``enable_audio=False`` so the SDK
+        never opens a mic, then call ``feed_audio`` for every captured chunk.
+
+        Args:
+            audio: PCM samples, mono, as ``bytes`` (int16 little-endian),
+                ``np.int16``, or ``np.float32`` in [-1, 1]. Arbitrary length —
+                re-chunked internally to the wire's 100 ms blocks.
+            sample_rate: sample rate of ``audio``. Resampled to 16 kHz when it
+                differs; default 16 kHz (no resample — the common case).
+
+        Frames fed before the WebSocket is open (e.g. during a reconnect) are
+        dropped, mirroring the mic path. Raises if the SDK is capturing its own
+        mic (``enable_audio=True``) or has not been started.
+        """
+        if self.enable_audio:
+            raise RuntimeError(
+                "feed_audio() requires enable_audio=False — the SDK is "
+                "capturing its own mic, so feeding would double the source"
+            )
+        if not self._started:
+            raise RuntimeError("call start() before feed_audio()")
+
+        samples = _to_float32_mono(audio)
+        if samples.size == 0:
+            return
+        if sample_rate != TARGET_AUDIO_RATE:
+            samples = _linear_downsample(samples, sample_rate, TARGET_AUDIO_RATE)
+
+        with self._feed_lock:
+            self._feed_buffer = np.concatenate([self._feed_buffer, samples])
+            chunks: list[np.ndarray] = []
+            while len(self._feed_buffer) >= SEND_INTERVAL_SAMPLES:
+                chunks.append(self._feed_buffer[:SEND_INTERVAL_SAMPLES])
+                self._feed_buffer = self._feed_buffer[SEND_INTERVAL_SAMPLES:]
+
+        for chunk in chunks:
+            pcm16 = np.clip(chunk * 32768.0, -32768, 32767).astype(np.int16)
+            self._on_mic_pcm16(pcm16.tobytes())
 
     # ── WS ────────────────────────────────────────────────────────
 
@@ -309,6 +371,15 @@ class AttentionClient:
         reason = reason or ""
         was_clean = code == 1000
         self._close_info = {"code": code, "reason": reason, "was_clean": was_clean}
+
+        # an unclean drop after the session was up
+        # means audio/predictions/turns stop until the consumer reconnects.
+        if not was_clean and self._ws_opened_at:
+            logger.warning(
+                "[saa] websocket closed mid-session: code=%s reason=%s"
+                " — predictions/turns stop until reconnect",
+                code, reason or "none",
+            )
         self._ws_closed.set()
         # Unblock handshake waiter if we closed before opening.
         self._ws_open.set()
@@ -359,6 +430,14 @@ class AttentionClient:
             self._emit("state", StateEvent(state=msg.get("state") or "idle"))
         elif t == "turn_ready":
             b64 = msg.get("audio_base64") or ""
+            # quick latency check
+            server_ts = msg.get("server_turn_ready_ts_ms")
+            if isinstance(server_ts, (int, float)):
+                transit_ms = time.time() * 1000.0 - float(server_ts)
+                logger.info(
+                    "[saa-timing] turn_ready transit (server→client) %.0fms"
+                    " (clock-skew sensitive)", transit_ms,
+                )
             raw_frames = msg.get("frames") or []
             frames = [
                 TurnFrame(
@@ -468,6 +547,23 @@ def _b64_to_int16(b64: str) -> np.ndarray:
         return np.zeros(0, dtype=np.int16)
     raw = base64.b64decode(b64)
     return np.frombuffer(raw, dtype=np.int16).copy()
+
+
+def _to_float32_mono(audio: Any) -> np.ndarray:
+    """Normalize fed audio (bytes / int16 / float ndarray) to float32 mono [-1, 1]."""
+    if isinstance(audio, (bytes, bytearray, memoryview)):
+        return np.frombuffer(bytes(audio), dtype=np.int16).astype(np.float32) / 32768.0
+    arr = np.asarray(audio)
+    if arr.ndim > 1:
+        # interleaved frames → first channel
+        arr = arr[:, 0]
+    arr = np.ascontiguousarray(arr.reshape(-1))
+    if arr.dtype == np.int16:
+        return arr.astype(np.float32) / 32768.0
+    if np.issubdtype(arr.dtype, np.floating):
+        return arr.astype(np.float32)
+    # any other int width — assume full-scale signed, normalize by int16 range
+    return arr.astype(np.float32) / 32768.0
 
 
 def _close_to_error(code: int, reason: str, was_clean: bool) -> Optional[AttentionErrorEvent]:
