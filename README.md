@@ -13,92 +13,107 @@ pip install saa-livekit-client
 ## Quickstart — existing voice agent
 
 ```python
+import asyncio
 import os
-from livekit import agents
-from livekit.agents import AgentSession, Agent
+
+from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli
 from livekit.plugins import openai
 from saa_livekit_client import (
-    AttentionEngine, start_attention_session, attention_agent_token,
+    AttentionEngine, attention_agent_token, start_attention_session,
 )
 
 
 class MyAssistant(Agent):
     def __init__(self):
-        super().__init__(instructions="You are a helpful assistant.")
+        super().__init__(instructions="You are a helpful assistant")
 
 
-async def entrypoint(ctx: agents.JobContext):
+server = AgentServer()
+
+
+@server.rtc_session()
+async def entrypoint(ctx: JobContext):
     await ctx.connect()
     user = await ctx.wait_for_participant()
 
-    # Issue a hidden-participant token for the saa agent.
-    agent_token = attention_agent_token(
-        api_key=os.environ["LIVEKIT_API_KEY"],
-        api_secret=os.environ["LIVEKIT_API_SECRET"],
-        room_name=ctx.room.name,
-    )
-
-    # Summon the saa hosted agent into the room.
-    session = await start_attention_session(
-        api_key=os.environ["saa_API_KEY"],
+    # summon the saa hosted agent into the room
+    saa = await start_attention_session(
+        api_key=os.environ["SAA_API_KEY"],
         livekit_url=os.environ["LIVEKIT_URL"],
-        agent_token=agent_token,
+        agent_token=attention_agent_token(
+            api_key=os.environ["LIVEKIT_API_KEY"],
+            api_secret=os.environ["LIVEKIT_API_SECRET"],
+            room_name=ctx.room.name,
+        ),
         room_name=ctx.room.name,
         participant_identity=user.identity,
-        attention_config={"frames_per_turn": 3, "vad_threshold": 0.5},
     )
+    ctx.add_shutdown_callback(saa.stop)
 
-    # Stand up the voice agent.
+    # stand up the voice agent, then wire saa on top of the running session
+    # (session.input / session.interrupt() are only valid once started)
     voice = AgentSession(llm=openai.realtime.RealtimeModel(voice="alloy"))
+    await voice.start(agent=MyAssistant(), room=ctx.room)
 
-    # Wire attention events into the voice agent.
-    attention = AttentionEngine(ctx.room, agent_identity=session.agent_identity)
+    engine = AttentionEngine(ctx.room, agent_identity=saa.agent_identity)
+    ctx.add_shutdown_callback(engine.stop)
 
-    @attention.on_prediction
+    @engine.on_prediction
     def _(p):
-        # Gate the model's mic — only class 2 (talking-to-device) gets through.
+        # gate the mic — only class 2 (talking-to-device) reaches the model
         voice.input.set_audio_enabled(p.aligned_class == 2)
 
-    @attention.on_interrupt
+    @engine.on_interrupt
     def _(ev):
         voice.interrupt()
 
-    @attention.on_interjection
+    @engine.on_interjection
     async def _(ev):
-        await voice.say("Want me to help with something?")
+        await voice.generate_reply(instructions="Briefly offer to help")
 
-    ctx.add_shutdown_callback(session.stop)
-    await attention.start()
-    await voice.start(agent=MyAssistant(), room=ctx.room)
+    # tell saa when the agent is speaking — arms interrupt, suppresses interjection
+    @voice.on("agent_state_changed")
+    def _(ev):
+        if ev.new_state == "speaking":
+            asyncio.create_task(engine.responding_start())
+        elif ev.old_state == "speaking":
+            asyncio.create_task(engine.responding_stop())
+
+    await engine.start()
 
 
 if __name__ == "__main__":
-    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))
+    cli.run_app(server)
 ```
 
-That's the whole integration. Works with cascaded pipelines AND
-`RealtimeModel` speech-to-speech
+That's the whole integration. Works with cascaded pipelines AND `RealtimeModel`
+speech-to-speech. Runnable variants are in the [`examples/livekit/`](https://github.com/attenlabs/saa-sdk/tree/main/examples/livekit)
+samples. (`WorkerOptions(entrypoint_fnc=...)` also works on 1.5.x — the older idiom.)
 
 ## Greenfield — `build_attention_entrypoint`
 
 For new voice agents that don't have an existing pipeline:
 
 ```python
-from livekit import agents
+from livekit.agents import AgentServer, JobContext, cli
 from saa_livekit_client import build_attention_entrypoint, TurnReadyEvent
 
-async def handle_turn(event: TurnReadyEvent, ctx: agents.JobContext):
+async def handle_turn(event: TurnReadyEvent, ctx: JobContext):
     # event.audio_pcm16 = int16 mono 16 kHz; event.frames = list[TurnFrame]
     response_pcm = await my_llm.respond(event.audio_pcm16, frames=event.frames)
     await publish_response_audio(ctx.room, response_pcm)
 
 entrypoint = build_attention_entrypoint(on_turn=handle_turn)
 
+server = AgentServer()
+server.rtc_session()(entrypoint)
+# or the older idiom: cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
+
 if __name__ == "__main__":
-    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))
+    cli.run_app(server)
 ```
 
-Environment: `saa_API_KEY`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_URL`.
+Environment: `SAA_API_KEY`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_URL`.
 
 ## Event types
 
@@ -136,4 +151,4 @@ so they never leak to other room participants.
 
 ## License
 
-Proprietary. © Attention Labs.
+Apache-2.0. © Attention Labs.

@@ -41,6 +41,10 @@ class PredictionEvent:
     num_faces: int
     """Faces visible on the input video tick."""
 
+    responding: bool = False
+    """True while the AI is mid-playback (native server flag). Equivalent to
+    `source == "ai_responding"` on older servers."""
+
 
 @dataclass(frozen=True)
 class VADEvent:

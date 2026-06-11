@@ -288,14 +288,35 @@ class AttentionEngine:
             async for chunk in reader:
                 chunks.append(chunk)
             buf = b"".join(chunks)
-        except Exception:
-            logger.exception("failed reading turn byte stream %s", stream_id)
+        except Exception as e:
+            # unexpected transport/read failure (rare) — keep the traceback
+            logger.warning(
+                "failed reading turn byte stream %s: %s", stream_id, e, exc_info=True,
+            )
+            return
+
+        # The byte-stream reader yields chunks in arrival order and does NOT
+        # reorder by chunk_index; if the transport delivers a payload short or
+        # out of order (observed on some Windows clients), the buffer is
+        # misframed and parse_turn_payload would read garbage frame lengths.
+        # When the sender declared total_length, validate it up front and drop
+        # the turn with one clear log line instead of misparsing into a flood
+        # of TurnPayloadError tracebacks.
+        expected = getattr(getattr(reader, "info", None), "size", None)
+        if expected and len(buf) != expected:
+            logger.warning(
+                "incomplete turn stream %s: got %d bytes, expected %d — dropping",
+                stream_id, len(buf), expected,
+            )
             return
 
         try:
             parsed = _wire.parse_turn_payload(buf)
-        except _wire.TurnPayloadError:
-            logger.exception("malformed turn payload on stream %s", stream_id)
+        except _wire.TurnPayloadError as e:
+            logger.warning(
+                "dropping malformed turn payload on stream %s (%d bytes): %s",
+                stream_id, len(buf), e,
+            )
             return
 
         # Match against whichever envelope is waiting. turn_ready and
@@ -320,6 +341,7 @@ class AttentionEngine:
             confidence=float(env.get("confidence") or 0.0),
             source=env.get("source", "model"),
             num_faces=int(env.get("num_faces", 0)),
+            responding=bool(env.get("responding", env.get("source") == "ai_responding")),
         )
         self._latest_prediction = ev
         if self._cb_prediction is not None:

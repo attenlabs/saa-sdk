@@ -1,10 +1,23 @@
 """build_attention_entrypoint — greenfield helper.
 
 Composes `attention_agent_token` + `start_attention_session` + `AttentionEngine`
-into a single `entrypoint(ctx)` function ready to pass to
-`agents.WorkerOptions(entrypoint_fnc=...)`. Customers writing their FIRST
-LiveKit voice agent don't need to know about the underlying primitives —
-they hand us a `handle_turn(event, ctx)` callback and we wire everything else.
+into a single `entrypoint(ctx)` coroutine. Customers writing their FIRST LiveKit
+voice agent don't need the underlying primitives — they hand us a
+`handle_turn(event, ctx)` callback and we wire everything else.
+
+The returned `entrypoint` is a plain `Callable[[JobContext], Awaitable[None]]`,
+so it plugs into either LiveKit Agents shape:
+
+    # AgentServer (current 1.5.x idiom)
+    server = AgentServer()
+    server.rtc_session()(build_attention_entrypoint(on_turn=handle_turn))
+    cli.run_app(server)
+
+    # WorkerOptions (older idiom, still supported on 1.5.x)
+    cli.run_app(WorkerOptions(entrypoint_fnc=build_attention_entrypoint(on_turn=handle_turn)))
+
+For an existing voice agent (your own AgentSession), skip this factory and wire
+AttentionEngine directly — see the package README and examples/livekit/.
 """
 from __future__ import annotations
 
@@ -43,7 +56,7 @@ def build_attention_entrypoint(
     agent_identity: str = DEFAULT_AGENT_IDENTITY,
     api_base: str | None = None,
 ) -> Callable[[JobContext], Awaitable[None]]:
-    """Build an `entrypoint(ctx)` function for `agents.WorkerOptions`.
+    """Build an `entrypoint(ctx)` coroutine for `AgentServer.rtc_session()` or `WorkerOptions(entrypoint_fnc=...)`.
 
     The returned coroutine:
       1. Awaits `ctx.connect()` and the first remote participant.

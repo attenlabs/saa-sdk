@@ -103,7 +103,7 @@ async def start_attention_session(
     relying on inference output.
 
     Args:
-        api_key:              saa_API_KEY — customer's saa API key.
+        api_key:              SAA_API_KEY — customer's saa API key.
         livekit_url:          Customer's LiveKit URL (e.g. wss://x.livekit.cloud).
                               Must be publicly reachable from our cloud.
         agent_token:          Hidden-participant JWT, issued via
