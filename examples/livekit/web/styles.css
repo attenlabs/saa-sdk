@@ -8,6 +8,7 @@
   --class-1: #f5c518; /* human-to-human */
   --class-2: #2ecc71; /* talking to device */
   --responding: #4aa8ff; /* AI is speaking back */
+  --warming: #d9ff00; /* model warming up (pre-`started`) */
 }
 
 * {
@@ -71,9 +72,26 @@ header h1 {
 
 #prediction[data-class="1"],
 #prediction[data-class="2"],
-#prediction[data-responding="true"] {
+#prediction[data-responding="true"],
+#prediction[data-warming="true"] {
   border-color: var(--state);
   box-shadow: 0 8px 28px -18px var(--state);
+}
+
+/* warming up: the model isn't live yet, so the confidence bar shows an
+   indeterminate sweep instead of a real value until `started` arrives. */
+#prediction[data-warming="true"] { --state: var(--warming); }
+
+#prediction[data-warming="true"] #conf-fill {
+  width: 100%;
+  background: linear-gradient(90deg, #16262a 0%, var(--warming) 50%, #16262a 100%);
+  background-size: 200% 100%;
+  animation: saa-warming 1.3s linear infinite;
+}
+
+@keyframes saa-warming {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 #class-label {

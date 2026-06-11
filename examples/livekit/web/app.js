@@ -43,6 +43,9 @@ async function start() {
 
     await room.connect(url, token);
     setStatus("waiting for agent…");
+    // SAA warms its model server-side once summoned; show that on the card
+    // until the native `started` pivot lands.
+    setWarming(true);
 
     // publish cam + mic (SAA is multimodal — it wants both)
     let tracks;
@@ -65,6 +68,7 @@ async function start() {
   } catch (e) {
     console.error("[saa] start failed:", e);
     setStatus(`error: ${e.message || e}`, true);
+    setWarming(false);
     if (room) {
       try { await room.disconnect(); } catch (_) {}
       room = null;
@@ -106,7 +110,7 @@ function onData(payload, _participant, _kind, topic) {
   }
   switch (msg.type) {
     // `started` is the native warmup-complete pivot — the model is ready
-    case "started": setStatus("SAA ready"); break;
+    case "started": setWarming(false); setStatus("SAA ready"); break;
     case "prediction": renderPrediction(msg); break;
     case "vad": renderVAD(msg); break;
     case "state": setStatus(msg.state); break;
@@ -146,12 +150,31 @@ async function onByteStream(reader, _participantInfo) {
 
 const LABELS = { 0: "silent", 1: "human ↔ human", 2: "talking to me" };
 
+// Show a "warming up" state on the prediction card until the server's native
+// `started` pivot — otherwise the card sits at "silent" through the
+// multi-second model warmup.
+function setWarming(on) {
+  const el = document.getElementById("prediction");
+  el.dataset.warming = String(on);
+  if (on) {
+    el.dataset.class = "0";
+    el.dataset.responding = "false";
+    document.getElementById("class-label").textContent = "warming up";
+    document.getElementById("conf-fill").style.width = ""; // let the CSS sweep show
+  } else {
+    document.getElementById("class-label").textContent = "—";
+    document.getElementById("conf-fill").style.width = "0%";
+  }
+}
+
 function renderPrediction(p) {
+  // first real prediction means the model is live — drop the warming state
+  const el = document.getElementById("prediction");
+  el.dataset.warming = "false";
   // prefer the canonical polished display_class; fall back to aligned_class
   const cls = p.display_class ?? p.aligned_class;
   // native AI-responding flag; older servers signal it via source instead
   const responding = p.responding ?? p.source === "ai_responding";
-  const el = document.getElementById("prediction");
   el.dataset.class = String(cls);
   el.dataset.responding = String(responding);
   // during AI playback the class is gated to silent — surface "responding"
@@ -177,6 +200,13 @@ async function stop() {
   }
   room = null;
   setStatus("disconnected");
+  // reset the prediction card to its idle look
+  const pred = document.getElementById("prediction");
+  pred.dataset.warming = "false";
+  pred.dataset.responding = "false";
+  pred.dataset.class = "0";
+  document.getElementById("class-label").textContent = "--";
+  document.getElementById("conf-fill").style.width = "0%";
   document.getElementById("btn-start").disabled = false;
   document.getElementById("btn-stop").disabled = true;
 }
