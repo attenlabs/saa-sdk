@@ -4,7 +4,7 @@ JavaScript SDK for [Attention Labs](https://attentionlabs.ai) real-time attentio
 
 ## Sign up
 
-Get your API token at [attentionlabs.ai/dashboard](https://attentionlabs.ai/dashboard).
+Get your API key at [attentionlabs.ai](https://attentionlabs.ai).
 
 ## Install
 
@@ -27,8 +27,8 @@ client.on("prediction", ({ cls, confidence, source, numFaces }) => {
   console.log(`${cls}: ${confidence.toFixed(2)}`);
 });
 
-client.on("speechReady", ({ audioBase64, durationSec }) => {
-  // Forward captured speech to your LLM of choice
+client.on("turnReady", ({ audioBase64, durationSec }) => {
+  // Forward the captured turn to your LLM of choice
 });
 
 await client.start({ videoElement: videoEl });
@@ -38,7 +38,7 @@ await client.start({ videoElement: videoEl });
 
 | Option             | Type     | Default                              | Description |
 | ------------------ | -------- | ------------------------------------ | ----------- |
-| `token`            | string   | —                                    | Your API token from the dashboard. |
+| `token`            | string   | —                                    | Your API key from attentionlabs.ai. |
 | `initialThreshold` | number   | `0.7`                                | Confidence threshold for predictions (0–1). |
 | `video.width`      | number   | `1920`                               | Capture width. |
 | `video.height`     | number   | `1080`                               | Capture height. |
@@ -64,17 +64,17 @@ await client.start({ videoElement: videoEl });
 | `prediction`     | `{ cls, confidence, source, numFaces }` |
 | `vad`            | `{ probability, isSpeech }` |
 | `state`          | `{ state }` — one of `listening`, `sending`, `cancelled`, `idle` |
-| `speechReady`    | `{ audioBase64, audioPcm16, durationSec }` |
+| `turnReady`      | `{ audioBase64, audioPcm16, durationSec, frames, context }` |
 | `interrupt`      | `{ fadeMs, confidence }`|
 | `error`          | `{ title, message, detail }` |
 | `disconnected`   | `{ code, reason }` |
 
 ## LLM integration
 
-The SDK captures speech but does **not** route it to an LLM. Use the `speechReady` event to forward audio to any model you like.
+The SDK captures speech but does **not** route it to an LLM. Use the `turnReady` event to forward audio to any model you like.
 
 When your LLM starts responding, call `client.mute()` and `client.markResponding(true)`. When it finishes, call `client.unmute()` and `client.markResponding(false)`.
 
 ## License
 
-MIT
+Apache-2.0

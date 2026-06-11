@@ -52,6 +52,9 @@ export class AttentionClient {
   private warmedUp = false;
   private threshold: number;
   private started = false;
+  
+  // server-assigned id
+  private sessionId: string | null = null;
 
   constructor(opts: AttentionClientOptions) {
     this.opts = opts;
@@ -147,10 +150,40 @@ export class AttentionClient {
     }
 
     try {
+      // Layer SDK error/state hooks on top of any caller-supplied callbacks so
+      // we always surface worklet failures and AudioContext suspensions as
+      // `error` events without messing up user-provided handlers.
+      const userOnWorkletError = audioOpts.onWorkletError;
+      const userOnContextStateChange = audioOpts.onContextStateChange;
+      const wiredAudioOpts: typeof audioOpts = {
+        ...audioOpts,
+        onWorkletError: (err: unknown) => {
+          this.emit("error", {
+            title: "Audio worklet error",
+            message: "The audio capture worklet threw and may have stopped streaming.",
+            detail: describeError(err),
+          });
+          try {
+            userOnWorkletError?.(err);
+          } catch {}
+        },
+        onContextStateChange: (state: string) => {
+          if (state === "suspended" || state === "interrupted") {
+            this.emit("error", {
+              title: "Audio paused",
+              message: `Microphone capture is ${state}. Audio may not be reaching the server.`,
+              detail: `AudioContext.state=${state}`,
+            });
+          }
+          try {
+            userOnContextStateChange?.(state);
+          } catch {}
+        },
+      };
       this.audioPipeline = await createAudioPipeline(
         this.mediaStream,
         this.opts.workletUrl,
-        audioOpts,
+        wiredAudioOpts,
         (pcm16) => this.sendAudio(pcm16),
       );
     } catch (err) {
@@ -215,6 +248,7 @@ export class AttentionClient {
     }
     this.started = false;
     this.warmedUp = false;
+    this.sessionId = null;
     this.micMuted = false;
   }
 
@@ -238,6 +272,27 @@ export class AttentionClient {
     const next = clamp01(value);
     this.threshold = next;
     this.sendControl({ action: "set_threshold", value: next });
+  }
+
+  /**
+   * Forward a batch of browser log entries over the active WebSocket. 
+   * Returns true if the send was queued, false if the WS isn't open, 
+   * falls back to an HTTP beacon in that case.
+   *
+   * shape (flexible)
+   *   { ts, wallclock_ts, level, category, msg, stack?, context?, count? }
+   */
+  sendClientLog(entries: ReadonlyArray<Record<string, unknown>>): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+    if (!entries || entries.length === 0) return true;  // nothing to do, considered success
+
+    // if ws.send synchronously throws (e.g. mid-teardown), 
+    // return false so the caller can fall back to the HTTP beacon.
+    return this.sendControl({ action: "client_log", entries });
+  }
+
+  getSessionId(): string | null {
+    return this.sessionId;
   }
 
   private teardownMedia(): void {
@@ -392,6 +447,9 @@ export class AttentionClient {
         });
         break;
       case "started":
+        if (typeof msg.session_id === "string") {
+          this.sessionId = msg.session_id;
+        }
         this.emit("started");
         // Push the current threshold now that the server is ready to receive it.
         this.sendControl({ action: "set_threshold", value: this.threshold });
@@ -456,11 +514,14 @@ export class AttentionClient {
     }
   }
 
-  private sendControl(data: Record<string, unknown>): void {
-    if (!this.isConnected) return;
+  private sendControl(data: Record<string, unknown>): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
     try {
-      this.ws!.send(JSON.stringify(data));
-    } catch {}
+      this.ws.send(JSON.stringify(data));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private startHeartbeat(): void {
@@ -509,6 +570,20 @@ export class AttentionClient {
 function clamp01(n: number): number {
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.min(1, n));
+}
+
+function describeError(err: unknown): string {
+  if (!err) return "unknown";
+  if (err instanceof Error) return err.message || err.name || "Error";
+  if (typeof err === "string") return err;
+  if (typeof err === "object" && err && "type" in err) {
+    return `Event<${String((err as { type: unknown }).type)}>`;
+  }
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
 }
 
 function buildCloseError(

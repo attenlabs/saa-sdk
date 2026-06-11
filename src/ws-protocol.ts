@@ -21,8 +21,9 @@ export type ServerMessage =
       frames?: Array<{ ts_offset_s: number; image_base64: string }>;
       /** Optional turn-context tag (e.g., "interjection_follow_up"). */
       context?: string;
+      server_turn_ready_ts_ms?: number;
     }
-  | { type: "started" }
+  | { type: "started"; session_id?: string | null }
   | { type: "config"; model_class2_threshold: number }
   | { type: "interrupt"; fade_ms?: number; confidence?: number }
   | {

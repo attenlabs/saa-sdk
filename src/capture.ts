@@ -16,7 +16,7 @@ export interface AudioPipeline {
 export async function createAudioPipeline(
   stream: MediaStream,
   workletUrlOverride: string | undefined,
-  _opts: AudioCaptureOptions,
+  opts: AudioCaptureOptions,
   onFrame: (pcm16: ArrayBuffer) => void,
 ): Promise<AudioPipeline> {
   const audioCtx = new AudioContext();
@@ -37,7 +37,24 @@ export async function createAudioPipeline(
   const source = audioCtx.createMediaStreamSource(stream);
   const workletNode = new AudioWorkletNode(audioCtx, "pcm-capture");
   workletNode.port.onmessage = (e: MessageEvent) => {
-    onFrame(e.data as ArrayBuffer);
+    const pcm16 = e.data as ArrayBuffer;
+    onFrame(pcm16);
+    opts.onAudioFrame?.(pcm16);
+  };
+  // The worklet runs on the audio thread; an unhandled throw can silently
+  // kill stream with no main-thread signal, show so the caller
+  // can log / show a toast / attempt restart.
+  workletNode.onprocessorerror = (ev: Event) => {
+    try {
+      opts.onWorkletError?.(ev);
+    } catch {}
+  };
+  // AudioContext can transition to "suspended" (autoplay, ios safari etc.)
+  // Capture so the caller can surface it.
+  audioCtx.onstatechange = () => {
+    try {
+      opts.onContextStateChange?.(audioCtx.state);
+    } catch {}
   };
   source.connect(workletNode);
 

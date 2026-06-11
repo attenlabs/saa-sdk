@@ -6,6 +6,9 @@ export interface VideoCaptureOptions {
 
 export interface AudioCaptureOptions {
   targetSampleRate?: number;
+  onAudioFrame?: (pcm16: ArrayBuffer) => void;
+  onWorkletError?: (err: unknown) => void;
+  onContextStateChange?: (state: string) => void;
 }
 
 export interface AttentionClientOptions {
