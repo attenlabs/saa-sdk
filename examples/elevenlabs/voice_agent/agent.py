@@ -29,7 +29,7 @@ class SAAFeedAudioInterface(AudioInterface):
     """Wraps an ElevenLabs AudioInterface and wires SAA in two ways:
 
     - tees the user mic into AttentionClient.feed_audio (so SAA classifies it),
-      then forwards to ElevenLabs *only when the gate is open* — i.e. only audio
+      then forwards to ElevenLabs *only when the gate is open*, only audio
       SAA judged device-directed (class 2) reaches the agent.
     - watches agent TTS on output() to drive saa.mark_responding, so SAA knows
       when the agent itself is speaking (arms barge-in, suppresses noise).
