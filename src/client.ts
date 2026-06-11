@@ -422,6 +422,7 @@ export class AttentionClient {
           confidence: conf,
           source: msg.source,
           numFaces: msg.num_faces,
+          responding: msg.responding ?? msg.source === "ai_responding",
         });
         break;
       }
@@ -451,6 +452,11 @@ export class AttentionClient {
           this.sessionId = msg.session_id;
         }
         this.emit("started");
+        // `started` is the deterministic warmup-complete pivot 
+        if (!this.warmedUp) {
+          this.warmedUp = true;
+          this.emit("warmupComplete");
+        }
         // Push the current threshold now that the server is ready to receive it.
         this.sendControl({ action: "set_threshold", value: this.threshold });
         break;

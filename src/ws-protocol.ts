@@ -11,6 +11,7 @@ export type ServerMessage =
       confidence: number | null;
       source: string;
       num_faces: number;
+      responding?: boolean;
     }
   | { type: "vad"; is_speech: boolean; probability: number }
   | { type: "state"; state: "listening" | "sending" | "cancelled" }

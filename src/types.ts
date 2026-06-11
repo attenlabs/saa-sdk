@@ -29,6 +29,7 @@ export interface PredictionEvent {
   confidence: number;
   source: string;
   numFaces: number;
+  responding: boolean;
 }
 
 export interface VadEvent {
