@@ -216,8 +216,9 @@ function onAppMessage({ data, fromId }) {
 
   switch (data.type) {
     case "started":
-      console.log("[saa] started", data);
-      setStatus("started");
+      // native warmup-complete pivot — the model is ready
+      console.log("[saa] warmed up", data);
+      setStatus("SAA ready");
       break;
     case "prediction":
       renderPrediction(data);
@@ -321,19 +322,29 @@ const LABELS = { 0: "silent", 1: "human ↔ human", 2: "talking to me" };
 
 // log only on transitions — predictions/VAD arrive every 250ms
 let _lastClass = null;
+let _lastResponding = null;
 let _lastVad = null;
 
 function renderPrediction(p) {
-  document.getElementById("class-label").textContent = LABELS[p.aligned_class] ?? "?";
+  // prefer the canonical polished display_class; fall back to aligned_class
+  const cls = p.display_class ?? p.aligned_class;
+  // native AI-responding flag; older servers signal it via source instead
+  const responding = p.responding ?? p.source === "ai_responding";
+  // during AI playback the class is gated to silent — surface "responding"
+  const label = responding ? "responding" : (LABELS[cls] ?? "?");
+  document.getElementById("class-label").textContent = label;
   document.getElementById("conf-fill").style.width = `${(p.confidence * 100).toFixed(0)}%`;
   document.getElementById("faces").textContent = `faces: ${p.num_faces}`;
-  document.getElementById("prediction").dataset.class = String(p.aligned_class);
-  if (p.aligned_class !== _lastClass) {
+  const el = document.getElementById("prediction");
+  el.dataset.class = String(cls);
+  el.dataset.responding = String(responding);
+  if (cls !== _lastClass || responding !== _lastResponding) {
     console.log(
-      `[saa] prediction → ${p.aligned_class} (${LABELS[p.aligned_class] ?? "?"})`,
+      `[saa] prediction → ${responding ? "responding" : cls} (${label})`,
       `conf=${p.confidence?.toFixed(2)} faces=${p.num_faces}`,
     );
-    _lastClass = p.aligned_class;
+    _lastClass = cls;
+    _lastResponding = responding;
   }
 }
 

@@ -105,6 +105,8 @@ function onData(payload, _participant, _kind, topic) {
     return;
   }
   switch (msg.type) {
+    // `started` is the native warmup-complete pivot — the model is ready
+    case "started": setStatus("SAA ready"); break;
     case "prediction": renderPrediction(msg); break;
     case "vad": renderVAD(msg); break;
     case "state": setStatus(msg.state); break;
@@ -145,10 +147,18 @@ async function onByteStream(reader, _participantInfo) {
 const LABELS = { 0: "silent", 1: "human ↔ human", 2: "talking to me" };
 
 function renderPrediction(p) {
-  document.getElementById("class-label").textContent = LABELS[p.aligned_class] ?? "?";
+  // prefer the canonical polished display_class; fall back to aligned_class
+  const cls = p.display_class ?? p.aligned_class;
+  // native AI-responding flag; older servers signal it via source instead
+  const responding = p.responding ?? p.source === "ai_responding";
+  const el = document.getElementById("prediction");
+  el.dataset.class = String(cls);
+  el.dataset.responding = String(responding);
+  // during AI playback the class is gated to silent — surface "responding"
+  document.getElementById("class-label").textContent =
+    responding ? "responding" : (LABELS[cls] ?? "?");
   document.getElementById("conf-fill").style.width = `${(p.confidence * 100).toFixed(0)}%`;
   document.getElementById("faces").textContent = `faces: ${p.num_faces}`;
-  document.getElementById("prediction").dataset.class = String(p.aligned_class);
 }
 
 function renderVAD(v) {
