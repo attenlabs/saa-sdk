@@ -6,6 +6,7 @@ import logging
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, Callable, Optional
 
@@ -57,6 +58,14 @@ logger = logging.getLogger("saa")
 Listener = Callable[..., Any]
 
 
+def _append_query(url: str, **params: str) -> str:
+    """Return url with params set in its query string"""
+    parts = urllib.parse.urlsplit(url)
+    q = dict(urllib.parse.parse_qsl(parts.query, keep_blank_values=True))
+    q.update({k: v for k, v in params.items() if v is not None})
+    return urllib.parse.urlunsplit(parts._replace(query=urllib.parse.urlencode(q)))
+
+
 class AttentionClient:
     """Streams mic + webcam to the SAA inference server and emits typed events.
 
@@ -75,6 +84,7 @@ class AttentionClient:
         initial_threshold: float = DEFAULT_THRESHOLD,
         enable_audio: bool = True,
         enable_video: bool = True,
+        server_profile: Optional[str] = None,
     ):
         self.url = url or DEFAULT_SERVER_URL
         self.token = token
@@ -82,6 +92,7 @@ class AttentionClient:
         self.audio_config = audio or MicConfig()
         self.enable_audio = enable_audio
         self.enable_video = enable_video
+        self.server_profile = server_profile
         self.threshold = _clamp01(initial_threshold)
 
         self._listeners: dict[str, list[Listener]] = {}
@@ -265,24 +276,49 @@ class AttentionClient:
 
     # ── WS ────────────────────────────────────────────────────────
 
+    def _effective_server_profile(self) -> Optional[str]:
+        """The server_profile this session requests, or None for the server
+        default. Explicit ``server_profile=`` wins; otherwise ``enable_video=
+        False`` selects ``"audio_only"``. ``"default"`` is the server's implicit
+        profile, so it resolves to None — omitting the selector keeps legacy
+        behavior byte-for-byte."""
+        if self.server_profile is not None:
+            prof = self.server_profile
+        else:
+            prof = None if self.enable_video else "audio_only"
+        return prof if prof and prof != "default" else None
+
     def _resolve_ws_url(self) -> str:
         """Resolve self.url to a concrete wss://…/ws URL.
 
-        - ws(s)://… is treated as a direct backend URL — returned as-is.
-        - http(s)://… is treated as a broker base URL — POST /allocate
-          with the bearer token, return the wss URL the broker returns.
+        - ws(s)://… is treated as a direct backend URL; the server_profile (if
+          any) is appended as a query param the backend /ws reads.
+        - http(s)://… is treated as a broker base URL — POST /allocate with the
+          bearer token (and the server_profile in the JSON body); the broker
+          bakes the selector into the wss URL it returns.
 
         Called once per connect, so reconnects pick a fresh least-loaded
         backend each time. Uses urllib (stdlib) — no new deps.
         """
         url = self.url
+        profile = self._effective_server_profile()
         if url.startswith("ws://") or url.startswith("wss://"):
-            return url
+            if not profile:
+                return url
+            if self.server_profile is None:
+                existing = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+                if "server_profile" in existing:
+                    return url
+            return _append_query(url, server_profile=profile)
         allocate_url = url.rstrip("/") + "/allocate"
         headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
+        if profile:
+            body = json.dumps({"server_profile": profile}).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        else:
+            body = b""  # legacy: empty body, broker picks the default profile
         req = urllib.request.Request(
-            allocate_url, method="POST", headers=headers,
-            data=b"",  # POST with empty body — broker doesn't read it
+            allocate_url, method="POST", headers=headers, data=body,
         )
         try:
             with urllib.request.urlopen(req, timeout=BROKER_ALLOCATE_TIMEOUT_S) as resp:
