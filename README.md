@@ -63,7 +63,7 @@ A full CLI demo wiring SAA + OpenAI Realtime lives at [**saa-py-demo**](https://
 from saa import AttentionClient, CameraConfig, MicConfig
 
 client = AttentionClient(
-    token="...",                    # Auth token — sent as WS subprotocol
+    token="...",                    # API key — sent as WS subprotocol
     url=None,                      # Server URL (default: wss://server.attentionlabs.ai/ws)
     video=CameraConfig(),          # Webcam config
     audio=MicConfig(),             # Mic config
