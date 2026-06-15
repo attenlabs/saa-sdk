@@ -9,6 +9,61 @@ const VIDEO_BACKPRESSURE_BYTES = 1_000_000;
 // thread and starving the WS heartbeat. Drop frames instead.
 const MAX_INFLIGHT_ENCODES = 2;
 
+// wire audio format — keep in lock-step with the worklet (audio-processor.js)
+export const TARGET_SAMPLE_RATE = 16000;
+export const SEND_INTERVAL_SAMPLES = 1600; // 100 ms at 16 kHz
+
+/** Normalize fed audio (Float32 / Int16 / raw int16 buffer) to float32 mono [-1, 1]. */
+export function toFloat32Mono(
+  audio: Int16Array | Float32Array | ArrayBuffer | ArrayBufferView,
+): Float32Array {
+  if (audio instanceof Float32Array) return audio;
+  if (audio instanceof Int16Array) {
+    const out = new Float32Array(audio.length);
+    for (let i = 0; i < audio.length; i++) out[i] = audio[i]! / 32768;
+    return out;
+  }
+  // raw buffer/view → little-endian int16 PCM
+  const i16 =
+    audio instanceof ArrayBuffer
+      ? new Int16Array(audio)
+      : new Int16Array(audio.buffer, audio.byteOffset, Math.floor(audio.byteLength / 2));
+  const out = new Float32Array(i16.length);
+  for (let i = 0; i < i16.length; i++) out[i] = i16[i]! / 32768;
+  return out;
+}
+
+/** Linear-interpolation resample — matches the worklet's downsampler; also upsamples. */
+export function resampleLinear(
+  samples: Float32Array,
+  fromRate: number,
+  toRate: number,
+): Float32Array {
+  if (fromRate === toRate || samples.length === 0) return samples;
+  const ratio = fromRate / toRate;
+  const outLen = Math.floor(samples.length / ratio);
+  if (outLen === 0) return new Float32Array(0);
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const srcIdx = i * ratio;
+    const lo = Math.floor(srcIdx);
+    const hi = Math.min(lo + 1, samples.length - 1);
+    const frac = srcIdx - lo;
+    out[i] = samples[lo]! * (1 - frac) + samples[hi]! * frac;
+  }
+  return out;
+}
+
+/** Float32 [-1,1] → Int16 PCM (clamped), matching the worklet's quantization. */
+export function floatToPcm16(chunk: Float32Array): Int16Array {
+  const pcm16 = new Int16Array(chunk.length);
+  for (let i = 0; i < chunk.length; i++) {
+    const s = Math.max(-1, Math.min(1, chunk[i]!));
+    pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  return pcm16;
+}
+
 export interface AudioPipeline {
   close(): Promise<void>;
 }

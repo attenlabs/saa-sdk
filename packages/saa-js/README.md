@@ -20,7 +20,7 @@ import { AttentionClient } from "@attenlabs/saa-js";
 const videoEl = document.querySelector("video");
 
 const client = new AttentionClient({
-  token: "your-auth-token",
+  token: "your-api-key",
 });
 
 client.on("prediction", ({ cls, confidence, source, numFaces }) => {
@@ -40,6 +40,8 @@ await client.start({ videoElement: videoEl });
 | ------------------ | -------- | ------------------------------------ | ----------- |
 | `token`            | string   | —                                    | Your API key from attentionlabs.ai. |
 | `initialThreshold` | number   | `0.7`                                | Confidence threshold for predictions (0–1). |
+| `enableAudio`      | boolean  | `true`                               | Capture the mic internally. Set `false` to push audio via `feedAudio()`. |
+| `enableVideo`      | boolean  | `true`                               | Capture the camera internally. Set `false` for audio-only or to push frames via `feedVideo()`. |
 | `video.width`      | number   | `1920`                               | Capture width. |
 | `video.height`     | number   | `1080`                               | Capture height. |
 | `video.jpegQuality`| number   | `0.6`                                | JPEG quality (0–1). |
@@ -48,8 +50,10 @@ await client.start({ videoElement: videoEl });
 
 | Method                      | Description |
 | --------------------------- | ----------- |
-| `start({ videoElement })`   | Start streaming. Requests mic + camera access and connects to the server. |
+| `start({ videoElement, mediaStream? })` | Start streaming + connect. Calls `getUserMedia` unless `mediaStream` is supplied. `videoElement` is required when video capture is enabled. |
 | `stop()`                    | Stop streaming and disconnect. |
+| `feedAudio(audio, sampleRate?)` | Push externally-captured audio (requires `enableAudio: false`). Accepts Float32 `[-1,1]`, Int16 PCM, or a raw int16 buffer; re-chunked + resampled to the wire's 16 kHz / 100 ms blocks. See [External capture](#external-capture). |
+| `feedVideo(jpeg)`           | Push an externally-captured JPEG frame (requires `enableVideo: false`). Accepts a `Blob`, `ArrayBuffer`, or view. |
 | `mute()` / `unmute()`       | Pause or resume audio. |
 | `markResponding(boolean)`   | Signal that your app is responding — pauses predictions until finished. |
 | `setThreshold(value)`       | Update the confidence threshold (0–1). |
@@ -74,6 +78,34 @@ await client.start({ videoElement: videoEl });
 The SDK captures speech but does **not** route it to an LLM. Use the `turnReady` event to forward audio to any model you like.
 
 When your LLM starts responding, call `client.mute()` and `client.markResponding(true)`. When it finishes, call `client.unmute()` and `client.markResponding(false)`.
+
+## External capture
+
+By default the SDK opens its own mic + camera. To run on capture you already
+own there are two paths:
+
+**Share a `MediaStream`** (the SDK reads it but won't stop its tracks):
+
+```ts
+const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+videoEl.srcObject = stream;                 // your app renders it
+await client.start({ videoElement: videoEl, mediaStream: stream });
+// ... another consumer (e.g. a gaze SDK) reads the same stream / videoEl
+```
+
+**Push frames yourself** (no `getUserMedia` at all) for taps, Twilio media,
+or non-browser sources:
+
+```ts
+const client = new AttentionClient({ token, enableAudio: false, enableVideo: false });
+await client.start();                        // opens the WS, captures nothing
+client.feedAudio(pcmChunk);                  // Float32 [-1,1] | Int16 | int16 buffer
+client.feedAudio(pcm48k, 48000);             // resampled to 16 kHz
+client.feedVideo(jpegBlob);                  // Blob | ArrayBuffer | view
+```
+
+Mix and match: `enableVideo: false` with internal mic for audio-only, or
+`enableAudio: false` + `feedAudio()` while the SDK still grabs camera frames.
 
 ## License
 

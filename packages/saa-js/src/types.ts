@@ -18,14 +18,20 @@ export interface AttentionClientOptions {
   audio?: AudioCaptureOptions;
   workletUrl?: string;
   initialThreshold?: number;
+  enableAudio?: boolean;
+  enableVideo?: boolean;
 }
 
 export interface StartOptions {
-  videoElement: HTMLVideoElement;
+  /** Required when video capture is enabled; omit for audio-only / feedVideo() mode. */
+  videoElement?: HTMLVideoElement;
+  /** Use this stream instead of getUserMedia; the SDK won't stop its tracks. */
+  mediaStream?: MediaStream;
 }
 
 export interface PredictionEvent {
   cls: number;
+  rawCls: number | null;
   confidence: number;
   source: string;
   numFaces: number;
@@ -44,7 +50,6 @@ export interface StateEvent {
 }
 
 export interface TurnFrame {
-  /** Seconds from listening-start. Negative for pre-context frames. */
   tsOffsetS: number;
   imageBase64: string;
 }
@@ -53,6 +58,7 @@ export interface TurnReadyEvent {
   audioBase64: string;
   audioPcm16: Int16Array;
   durationSec: number;
+  serverTurnReadyTsMs: number | null;
   frames: TurnFrame[];
   context: string | null;
 }

@@ -15,6 +15,11 @@ import {
 import {
   createAudioPipeline,
   startVideoPipeline,
+  toFloat32Mono,
+  resampleLinear,
+  floatToPcm16,
+  TARGET_SAMPLE_RATE,
+  SEND_INTERVAL_SAMPLES,
   type AudioPipeline,
   type VideoPipeline,
 } from "./capture.js";
@@ -52,13 +57,21 @@ export class AttentionClient {
   private warmedUp = false;
   private threshold: number;
   private started = false;
-  
+
+  private readonly enableAudio: boolean;
+  private readonly enableVideo: boolean;
+  // false for a caller-supplied stream — stop() won't stop its tracks
+  private ownsStream = true;
+  private feedBuffer = new Float32Array(0); // feedAudio() carry-over
+
   // server-assigned id
   private sessionId: string | null = null;
 
   constructor(opts: AttentionClientOptions) {
     this.opts = opts;
     this.threshold = clamp01(opts.initialThreshold ?? DEFAULT_THRESHOLD);
+    this.enableAudio = opts.enableAudio !== false;
+    this.enableVideo = opts.enableVideo !== false;
   }
 
   on<E extends AttentionEventName>(
@@ -104,41 +117,55 @@ export class AttentionClient {
     return this.threshold;
   }
 
-  async start(options: StartOptions): Promise<void> {
+  async start(options: StartOptions = {}): Promise<void> {
     if (this.started) throw new Error("AttentionClient already started");
     this.started = true;
 
-    const videoEl = options.videoElement;
+    const videoEl = options.videoElement ?? null;
     const videoOpts = this.opts.video ?? {};
     const audioOpts = this.opts.audio ?? {};
 
+    if (this.enableVideo && !videoEl) {
+      this.started = false;
+      throw new Error(
+        "start() needs options.videoElement when video capture is enabled — " +
+          "pass enableVideo:false for audio-only or feedVideo() mode",
+      );
+    }
+
+    // caller-supplied stream skips getUserMedia; both disabled = no capture
     try {
-      this.mediaStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-        video: {
-          width: { ideal: videoOpts.width ?? 1920, max: videoOpts.width ?? 1920 },
-          height: {
-            ideal: videoOpts.height ?? 1080,
-            max: videoOpts.height ?? 1080,
-          },
-        },
-      });
+      if (options.mediaStream) {
+        this.mediaStream = options.mediaStream;
+        this.ownsStream = false;
+      } else if (this.enableAudio || this.enableVideo) {
+        this.mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: this.enableAudio
+            ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+            : false,
+          video: this.enableVideo
+            ? {
+                width: { ideal: videoOpts.width ?? 1920, max: videoOpts.width ?? 1920 },
+                height: { ideal: videoOpts.height ?? 1080, max: videoOpts.height ?? 1080 },
+              }
+            : false,
+        });
+        this.ownsStream = true;
+      }
     } catch (err) {
       this.started = false;
       throw err;
     }
 
-    videoEl.srcObject = this.mediaStream;
-    if (!videoEl.videoWidth) {
-      await new Promise<void>((resolve) =>
-        videoEl.addEventListener("loadedmetadata", () => resolve(), {
-          once: true,
-        }),
-      );
+    if (this.enableVideo && videoEl && this.mediaStream) {
+      videoEl.srcObject = this.mediaStream;
+      if (!videoEl.videoWidth) {
+        await new Promise<void>((resolve) =>
+          videoEl.addEventListener("loadedmetadata", () => resolve(), {
+            once: true,
+          }),
+        );
+      }
     }
 
     try {
@@ -149,58 +176,60 @@ export class AttentionClient {
       throw err;
     }
 
-    try {
-      // Layer SDK error/state hooks on top of any caller-supplied callbacks so
-      // we always surface worklet failures and AudioContext suspensions as
-      // `error` events without messing up user-provided handlers.
-      const userOnWorkletError = audioOpts.onWorkletError;
-      const userOnContextStateChange = audioOpts.onContextStateChange;
-      const wiredAudioOpts: typeof audioOpts = {
-        ...audioOpts,
-        onWorkletError: (err: unknown) => {
-          this.emit("error", {
-            title: "Audio worklet error",
-            message: "The audio capture worklet threw and may have stopped streaming.",
-            detail: describeError(err),
-          });
-          try {
-            userOnWorkletError?.(err);
-          } catch {}
-        },
-        onContextStateChange: (state: string) => {
-          if (state === "suspended" || state === "interrupted") {
+    if (this.enableAudio && this.mediaStream) {
+      try {
+        // surface worklet/context errors as `error` events, then call the user's hooks
+        const userOnWorkletError = audioOpts.onWorkletError;
+        const userOnContextStateChange = audioOpts.onContextStateChange;
+        const wiredAudioOpts: typeof audioOpts = {
+          ...audioOpts,
+          onWorkletError: (err: unknown) => {
             this.emit("error", {
-              title: "Audio paused",
-              message: `Microphone capture is ${state}. Audio may not be reaching the server.`,
-              detail: `AudioContext.state=${state}`,
+              title: "Audio worklet error",
+              message: "The audio capture worklet threw and may have stopped streaming.",
+              detail: describeError(err),
             });
-          }
-          try {
-            userOnContextStateChange?.(state);
-          } catch {}
-        },
-      };
-      this.audioPipeline = await createAudioPipeline(
-        this.mediaStream,
-        this.opts.workletUrl,
-        wiredAudioOpts,
-        (pcm16) => this.sendAudio(pcm16),
-      );
-    } catch (err) {
-      await this.stop();
-      throw err;
+            try {
+              userOnWorkletError?.(err);
+            } catch {}
+          },
+          onContextStateChange: (state: string) => {
+            if (state === "suspended" || state === "interrupted") {
+              this.emit("error", {
+                title: "Audio paused",
+                message: `Microphone capture is ${state}. Audio may not be reaching the server.`,
+                detail: `AudioContext.state=${state}`,
+              });
+            }
+            try {
+              userOnContextStateChange?.(state);
+            } catch {}
+          },
+        };
+        this.audioPipeline = await createAudioPipeline(
+          this.mediaStream,
+          this.opts.workletUrl,
+          wiredAudioOpts,
+          (pcm16) => this.sendAudio(pcm16),
+        );
+      } catch (err) {
+        await this.stop();
+        throw err;
+      }
     }
 
-    this.videoPipeline = startVideoPipeline(
-      videoEl,
-      videoOpts,
-      () => this.ws?.bufferedAmount ?? 0,
-      () => this.isConnected,
-      (jpeg) => this.sendVideo(jpeg),
-      () => {
-        this.skippedVideo++;
-      },
-    );
+    if (this.enableVideo && videoEl) {
+      this.videoPipeline = startVideoPipeline(
+        videoEl,
+        videoOpts,
+        () => this.ws?.bufferedAmount ?? 0,
+        () => this.isConnected,
+        (jpeg) => this.sendVideo(jpeg),
+        () => {
+          this.skippedVideo++;
+        },
+      );
+    }
 
     // Backgrounded tabs are the most common cause of unclean disconnects:
     // Chrome clamps setInterval to ~1Hz when a tab loses focus and AudioContext
@@ -250,6 +279,7 @@ export class AttentionClient {
     this.warmedUp = false;
     this.sessionId = null;
     this.micMuted = false;
+    this.feedBuffer = new Float32Array(0);
   }
 
   mute(): void {
@@ -260,6 +290,61 @@ export class AttentionClient {
   unmute(): void {
     this.micMuted = false;
     this.sendControl({ action: "unmute" });
+  }
+
+  /** Push external audio (requires enableAudio:false); resampled + re-chunked to 16 kHz/100 ms */
+  feedAudio(
+    audio: Int16Array | Float32Array | ArrayBuffer | ArrayBufferView,
+    sampleRate: number = TARGET_SAMPLE_RATE,
+  ): void {
+    if (this.enableAudio) {
+      throw new Error(
+        "feedAudio() requires enableAudio:false — the SDK is capturing its own mic",
+      );
+    }
+    if (!this.started) throw new Error("call start() before feedAudio()");
+
+    let samples = toFloat32Mono(audio);
+    if (samples.length === 0) return;
+    if (sampleRate !== TARGET_SAMPLE_RATE) {
+      samples = resampleLinear(samples, sampleRate, TARGET_SAMPLE_RATE);
+    }
+
+    const combined = new Float32Array(this.feedBuffer.length + samples.length);
+    combined.set(this.feedBuffer);
+    combined.set(samples, this.feedBuffer.length);
+
+    let offset = 0;
+    while (combined.length - offset >= SEND_INTERVAL_SAMPLES) {
+      const chunk = combined.subarray(offset, offset + SEND_INTERVAL_SAMPLES);
+      offset += SEND_INTERVAL_SAMPLES;
+      // .buffer widens to ArrayBufferLike on TS 5.7+; it's a real ArrayBuffer at runtime
+      this.sendAudio(floatToPcm16(chunk).buffer as ArrayBuffer);
+    }
+    this.feedBuffer = combined.slice(offset);
+  }
+
+  /** Push an external JPEG frame (requires enableVideo:false) */
+  feedVideo(jpeg: Blob | ArrayBuffer | ArrayBufferView): void {
+    if (this.enableVideo) {
+      throw new Error(
+        "feedVideo() requires enableVideo:false — the SDK is capturing its own camera",
+      );
+    }
+    if (!this.started) throw new Error("call start() before feedVideo()");
+
+    if (jpeg instanceof Blob) {
+      jpeg
+        .arrayBuffer()
+        .then((buf) => this.sendVideo(buf))
+        .catch(() => {});
+      return;
+    }
+    const buf =
+      jpeg instanceof ArrayBuffer
+        ? jpeg
+        : jpeg.buffer.slice(jpeg.byteOffset, jpeg.byteOffset + jpeg.byteLength);
+    this.sendVideo(buf as ArrayBuffer);
   }
 
   markResponding(responding: boolean): void {
@@ -297,9 +382,13 @@ export class AttentionClient {
 
   private teardownMedia(): void {
     if (this.mediaStream) {
-      for (const t of this.mediaStream.getTracks()) t.stop();
+      // only stop tracks we created
+      if (this.ownsStream) {
+        for (const t of this.mediaStream.getTracks()) t.stop();
+      }
       this.mediaStream = null;
     }
+    this.ownsStream = true;
   }
 
   /**
@@ -419,6 +508,7 @@ export class AttentionClient {
         }
         this.emit("prediction", {
           cls,
+          rawCls: typeof msg.class === "number" ? msg.class : null,
           confidence: conf,
           source: msg.source,
           numFaces: msg.num_faces,
@@ -440,6 +530,9 @@ export class AttentionClient {
           audioBase64: msg.audio_base64,
           audioPcm16: base64ToInt16(msg.audio_base64),
           durationSec: msg.duration,
+          // Server-clock emit stamp
+          serverTurnReadyTsMs: typeof (msg as any).server_turn_ready_ts_ms === "number"
+            ? (msg as any).server_turn_ready_ts_ms : null,
           frames: (msg.frames ?? []).map((f) => ({
             tsOffsetS: f.ts_offset_s,
             imageBase64: f.image_base64,
