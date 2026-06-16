@@ -37,13 +37,6 @@ from .events import (
 )
 from .ws_protocol import MSG_AUDIO, MSG_VIDEO, frame_binary
 
-# Default URL is the broker. The SDK auto-detects mode from the URL scheme:
-#   http(s)://… → POST /allocate (Bearer token), then connect to the
-#                 wss URL the broker returns. Recommended default — sticky
-#                 least-loaded routing across multiple backends.
-#   ws(s)://…   → connect WS directly (legacy / debugging). Bypasses the
-#                 broker. Useful for pinning a session to a specific
-#                 backend during tests.
 DEFAULT_SERVER_URL = "https://broker.attentionlabs.ai"
 BROKER_ALLOCATE_TIMEOUT_S = 5.0
 DEFAULT_THRESHOLD = 0.7
@@ -59,7 +52,9 @@ Listener = Callable[..., Any]
 
 
 def _append_query(url: str, **params: str) -> str:
-    """Return url with params set in its query string"""
+    """Return *url* with *params* set in its query string (overwriting a
+    same-named key), preserving other existing params (so a broker-returned URL
+    that already carries a ticket keeps it). None-valued params are skipped."""
     parts = urllib.parse.urlsplit(url)
     q = dict(urllib.parse.parse_qsl(parts.query, keep_blank_values=True))
     q.update({k: v for k, v in params.items() if v is not None})
@@ -274,6 +269,50 @@ class AttentionClient:
             pcm16 = np.clip(chunk * 32768.0, -32768, 32767).astype(np.int16)
             self._on_mic_pcm16(pcm16.tobytes())
 
+    def feed_video(self, frame: Any) -> None:
+        """Stream an externally-captured video frame instead of the SDK's own camera.
+
+        Use this when another stack already owns the camera. Construct the
+        client with ``enable_video=False`` so the SDK never opens a camera, then
+        call ``feed_video`` for every frame.
+
+        Args:
+            frame: a pre-encoded JPEG as ``bytes``/``bytearray``/``memoryview``
+                (sent as-is — the symmetric counterpart to the JS SDK's
+                ``feedVideo(Blob | ArrayBuffer)``), or a raw image as an
+                ``np.ndarray`` (H×W or H×W×C, BGR like OpenCV) which is
+                JPEG-encoded with the client's ``CameraConfig.jpeg_quality``
+                before sending.
+
+        Frames fed before the WebSocket is open (e.g. during a reconnect) are
+        dropped, mirroring the camera path. Raises if the SDK is capturing its
+        own camera (``enable_video=True``) or has not been started.
+        """
+        if self.enable_video:
+            raise RuntimeError(
+                "feed_video() requires enable_video=False — the SDK is "
+                "capturing its own camera, so feeding would double the source"
+            )
+        if not self._started:
+            raise RuntimeError("call start() before feed_video()")
+
+        if isinstance(frame, (bytes, bytearray, memoryview)):
+            jpeg = bytes(frame)
+            if not jpeg:
+                return
+        else:
+            import cv2
+
+            arr = np.asarray(frame)
+            if arr.size == 0:
+                return
+            params = [int(cv2.IMWRITE_JPEG_QUALITY), int(self.video_config.jpeg_quality)]
+            ok, buf = cv2.imencode(".jpg", arr, params)
+            if not ok:
+                return
+            jpeg = buf.tobytes()
+        self._on_cam_jpeg(jpeg)
+
     # ── WS ────────────────────────────────────────────────────────
 
     def _effective_server_profile(self) -> Optional[str]:
@@ -293,8 +332,7 @@ class AttentionClient:
 
         - ws(s)://… is treated as a direct backend URL; the server_profile (if
           any) is appended as a query param the backend /ws reads.
-        - http(s)://… is treated as a broker base URL — POST /allocate with the
-          bearer token (and the server_profile in the JSON body); the broker
+        - http(s)://… is treated as a broker base URL; the broker
           bakes the selector into the wss URL it returns.
 
         Called once per connect, so reconnects pick a fresh least-loaded
