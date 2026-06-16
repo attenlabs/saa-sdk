@@ -220,9 +220,14 @@ function onAppMessage({ data, fromId }) {
   switch (data.type) {
     case "started":
       // `started` = model loaded, keep  "warming up"
-      // until the first real prediction
+      // until warmup_complete (first real prediction)
       console.log("[saa] model loaded", data);
       setStatus("warming up…");
+      break;
+    case "warmup_complete":
+      // native pivot: model produced its first real prediction
+      setWarming(false);
+      setStatus("live");
       break;
     case "prediction":
       renderPrediction(data);

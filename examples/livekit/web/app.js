@@ -112,6 +112,8 @@ function onData(payload, _participant, _kind, topic) {
     // `started` = model loaded, keep  "warming up"
     // until the first real prediction 
     case "started": setStatus("warming up…"); break;
+    // native pivot: model produced its first real prediction
+    case "warmup_complete": setWarming(false); setStatus("live"); break;
     case "prediction": renderPrediction(msg); break;
     case "vad": renderVAD(msg); break;
     case "state": setStatus(msg.state); break;
