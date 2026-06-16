@@ -509,10 +509,6 @@ export class AttentionClient {
         // to class-1). Falls back to raw `class` for older servers.
         const cls = msg.display_class ?? msg.class ?? 0;
         const conf = msg.confidence ?? 0;
-        if (!this.warmedUp && conf > 0) {
-          this.warmedUp = true;
-          this.emit("warmupComplete");
-        }
         this.emit("prediction", {
           cls,
           rawCls: typeof msg.class === "number" ? msg.class : null,
@@ -552,13 +548,14 @@ export class AttentionClient {
           this.sessionId = msg.session_id;
         }
         this.emit("started");
-        // `started` is the deterministic warmup-complete pivot 
+        // `started` only means the model is loaded and session has started
+        this.sendControl({ action: "set_threshold", value: this.threshold });
+        break;
+      case "warmup_complete":
         if (!this.warmedUp) {
           this.warmedUp = true;
           this.emit("warmupComplete");
         }
-        // Push the current threshold now that the server is ready to receive it.
-        this.sendControl({ action: "set_threshold", value: this.threshold });
         break;
       case "config":
         if (typeof msg.model_class2_threshold === "number") {

@@ -1,6 +1,6 @@
 {
   "name": "@attenlabs/saa-js",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "author": "Attention Labs <omar@attentionlabs.ai>",
   "homepage": "https://attentionlabs.ai",
   "description": "Browser JS SDK for the SD Attention Server (SAA). Streams microphone + webcam to the inference server and emits typed events for predictions, VAD, conversation state, and speech audio ready for downstream LLM use.",

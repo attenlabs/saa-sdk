@@ -25,6 +25,7 @@ export type ServerMessage =
       server_turn_ready_ts_ms?: number;
     }
   | { type: "started"; session_id?: string | null }
+  | { type: "warmup_complete"; session_id?: string | null }
   | { type: "config"; model_class2_threshold: number }
   | { type: "interrupt"; fade_ms?: number; confidence?: number }
   | {
