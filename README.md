@@ -102,6 +102,7 @@ client = AttentionClient(
 | `mark_responding(bool)`      | Tell the server an LLM response is in flight. Server stops emitting predictions while `True`. |
 | `set_threshold(value: float)` | Update device-class confidence threshold (0..1). Server acks via `config` event. |
 | `feed_audio(audio, *, sample_rate=16000)` | Stream audio captured by another stack instead of the SDK's own mic. Requires `enable_audio=False`. See [Feeding external audio](#feeding-external-audio). |
+| `feed_video(frame)` | Push an externally-captured frame instead of the SDK's own camera. Requires `enable_video=False`. Accepts pre-encoded JPEG `bytes` or a raw `np.ndarray` (BGR, JPEG-encoded internally). See [Feeding external audio](#feeding-external-audio). |
 
 ### Feeding external audio
 
@@ -117,9 +118,22 @@ client.feed_audio(pcm_chunk)         # bytes (int16 LE), np.int16, or np.float32
 
 `feed_audio` accepts arbitrary chunk sizes and re-chunks internally to the wire's 100 ms blocks; pass `sample_rate=` if your audio isn't already 16 kHz and it'll resample. Calling it while `enable_audio=True` raises (that would double the audio source). A runnable ElevenLabs Conversational AI example lives in [`saa-sdk/examples/elevenlabs`](https://github.com/attenlabs/saa-sdk/tree/main/examples/elevenlabs).
 
+Frames work the same way — construct with `enable_video=False` and push with `feed_video()`:
+
+```python
+client = AttentionClient(token="...", enable_video=False)
+client.start()
+
+# in your frame callback, pre-encoded JPEG bytes, or a raw BGR np.ndarray:
+client.feed_video(jpeg_bytes)        # bytes / bytearray / memoryview, sent as-is
+client.feed_video(bgr_frame)         # np.ndarray, JPEG-encoded at CameraConfig.jpeg_quality
+```
+
+Calling `feed_video` while `enable_video=True` raises. Mix freely: `enable_video=False` with the internal mic gives audio-only with external frames, or `enable_audio=False` + `feed_audio()` while the SDK still grabs camera frames.
+
 ### Events
 
-Register handlers with decorators. All callbacks fire on internal threads — keep them fast or hand work off to your own thread.
+Register handlers with decorators. All callbacks fire on internal threads, keep them fast or hand work off to your own thread.
 
 ```python
 @client.on_prediction
