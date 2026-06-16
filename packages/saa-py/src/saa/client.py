@@ -489,9 +489,6 @@ class AttentionClient:
                 cls = 0
             conf = msg.get("confidence") or 0.0
 
-            if not self._warmed_up and conf > 0:
-                self._warmed_up = True
-                self._emit("warmup_complete")
             source = msg.get("source") or ""
             self._emit("prediction", PredictionEvent(
                 cls=int(cls),
@@ -536,11 +533,12 @@ class AttentionClient:
             ))
         elif t == "started":
             self._emit("started")
-            # `started` is the actual warmup-complete
+            # `started` only means the model is loaded
+            self._send_control({"action": "set_threshold", "value": self.threshold})
+        elif t == "warmup_complete":
             if not self._warmed_up:
                 self._warmed_up = True
                 self._emit("warmup_complete")
-            self._send_control({"action": "set_threshold", "value": self.threshold})
         elif t == "config":
             thr = msg.get("model_class2_threshold")
             if isinstance(thr, (int, float)):
