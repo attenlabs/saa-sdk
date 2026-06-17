@@ -1,8 +1,10 @@
 # SAA-gated ElevenLabs Conversational AI agent — debug/logging build.
 #
-# SAA decides which speech is addressed to the agent; only that audio is
-# forwarded to ElevenLabs. This build logs prediction + responding + forward
-# state so the gating can be observed (no TUI).
+# ElevenLabs always gets a continuous 16 kHz stream: the user's real mic audio
+# while SAA says it's device-directed (held open briefly so a pause doesn't chop
+# it and so ElevenLabs can endpoint), and silence otherwise — so the agent never
+# answers side conversations, while its own VAD still endpoints and replies.
+# Logs prediction / responding / send state so the gating can be observed (no TUI).
 import argparse
 import logging
 import os
@@ -26,26 +28,31 @@ OUTPUT_BYTES_PER_SEC = 16000 * 2
 
 
 class SAAFeedAudioInterface(AudioInterface):
-    """Tees the mic into SAA (feed_audio) and forwards to ElevenLabs only when
-    SAA says device-directed AND the agent isn't speaking.
+    """Tees the mic into SAA and feeds ElevenLabs a continuous stream: real audio
+    while device-directed, silence otherwise.
 
-    `responding` is tracked by agent-TTS *playback* duration, not by output()
-    calls: DefaultAudioInterface queues output() instantly but plays on a
-    background thread, so an output()-idle watchdog flips responding off while
-    the agent is still audible — and its echo (no AEC) leaks back as user audio.
+    - Gate is debounced: opens on class-2, closes only after `close_debounce_ticks`
+      consecutive non-class-2 ticks — so a pause doesn't chop an utterance and
+      ElevenLabs gets a real trailing-silence tail to endpoint on.
+    - `responding` is tracked by agent-TTS *playback* duration, not output() calls:
+      DefaultAudioInterface queues output() instantly but plays on a background
+      thread, so output()-idle would flip responding off mid-playback and the
+      agent's echo (no AEC) would leak back as user audio.
     """
 
     def __init__(self, base: AudioInterface, saa: AttentionClient, *,
-                 gate: bool = True, responding_tail_ms: int = 300):
+                 close_debounce_ticks: int = 4, responding_tail_ms: int = 300):
         self._base = base
         self._saa = saa
-        self._gate_open = not gate
+        self._close_debounce = close_debounce_ticks
+        self._gate_open = False         # start closed; opens on first device-directed tick
+        self._misses = 0                # consecutive non-device-directed ticks
         self._user_cb = None
         self._primed = False
         self._tail_s = responding_tail_ms / 1000.0
         self._responding = False
         self._play_until = 0.0          # monotonic deadline: agent audio plays until here
-        self._fwd_on = False            # last effective-forward state (for transition logs)
+        self._sending_real = False      # last send state (real vs silence) for transition logs
         self._lock = threading.Lock()
         self._wd_stop = threading.Event()
         self._wd: threading.Thread | None = None
@@ -54,8 +61,20 @@ class SAAFeedAudioInterface(AudioInterface):
     def responding(self) -> bool:
         return self._responding
 
-    def set_gate_open(self, is_open: bool) -> None:
-        self._gate_open = is_open
+    @property
+    def gate_open(self) -> bool:
+        return self._gate_open
+
+    def update_gate(self, device_directed: bool) -> None:
+        # open immediately on device-directed; close only after a short streak of
+        # non-device-directed ticks (debounce) so single class-0 dips don't chop.
+        if device_directed:
+            self._misses = 0
+            self._gate_open = True
+        else:
+            self._misses += 1
+            if self._misses >= self._close_debounce:
+                self._gate_open = False
 
     # ── lifecycle ─────────────────────────────────────────────────────────
     def prime(self) -> None:
@@ -108,19 +127,22 @@ class SAAFeedAudioInterface(AudioInterface):
 
     # ── internals ─────────────────────────────────────────────────────────
     def _tee(self, audio: bytes):
-        # always feed SAA; forward to the agent only when device-directed AND
-        # the agent isn't speaking (else its own playback echoes back).
+        # always feed SAA so it classifies every frame
         try:
             self._saa.feed_audio(audio)
         except Exception:
             log.exception("feed_audio failed")
-        forward = self._gate_open and not self._responding and self._user_cb is not None
-        if forward != self._fwd_on:
-            self._fwd_on = forward
-            log.info("FWD %s  (gate=%s resp=%s)",
-                     "ON " if forward else "OFF", self._gate_open, self._responding)
-        if forward:
-            self._user_cb(audio)
+        if self._user_cb is None:
+            return  # priming: SAA only, ElevenLabs not connected yet
+        # continuous stream to ElevenLabs: real audio only when device-directed
+        # and the agent isn't speaking; silence otherwise (so it never hears side
+        # talk or its own echo, but its VAD still gets a clean speech→silence edge).
+        send_real = self._gate_open and not self._responding
+        if send_real != self._sending_real:
+            self._sending_real = send_real
+            log.info("SEND %s  (gate=%s resp=%s)",
+                     "real " if send_real else "muted", self._gate_open, self._responding)
+        self._user_cb(audio if send_real else bytes(len(audio)))
 
     def _set_responding(self, value: bool, reason: str):
         fire = False
@@ -155,7 +177,7 @@ def main() -> int:
 
     saa = AttentionClient(token=saa_api_key, enable_audio=False, enable_video=False,
                           initial_threshold=threshold)
-    attn = SAAFeedAudioInterface(DefaultAudioInterface(), saa, gate=True)
+    attn = SAAFeedAudioInterface(DefaultAudioInterface(), saa)
 
     warmed = threading.Event()
 
@@ -170,15 +192,14 @@ def main() -> int:
 
     @saa.on_prediction
     def _(ev):
-        open_gate = ev.cls == 2
-        attn.set_gate_open(open_gate)
-        resp = attn.responding
-        log.info("PRED cls=%d conf=%.2f src=%s | resp=%s gate=%s fwd=%s",
+        attn.update_gate(ev.cls == 2)          # debounced open/close
+        resp, gate = attn.responding, attn.gate_open
+        log.info("PRED cls=%d conf=%.2f src=%s | resp=%s gate=%s send=%s",
                  ev.cls, ev.confidence or 0.0, ev.source,
-                 resp, "open" if open_gate else "shut",
-                 "Y" if (open_gate and not resp) else "N")
-        if open_gate and resp:
-            log.info("  ^ OVERLAP: cls=2 while agent SPEAKING (echo?) — held back")
+                 resp, "open" if gate else "shut",
+                 "real" if (gate and not resp) else "muted")
+        if ev.cls == 2 and resp:
+            log.info("  ^ cls=2 while agent SPEAKING (echo?) — muted")
 
     @saa.on_interrupt
     def _(ev):

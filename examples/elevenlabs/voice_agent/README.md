@@ -7,8 +7,8 @@ An [ElevenLabs Conversational AI](https://elevenlabs.io/docs/eleven-agents/overv
 Single file ([`agent.py`](./agent.py)). The moving parts:
 
 - `AttentionClient(token=..., enable_audio=False, enable_video=False)` -> streaming SDK in **feed mode**: it opens the cloud WebSocket but captures nothing itself.
-- `SAAFeedAudioInterface(DefaultAudioInterface(), saa)` -> wraps ElevenLabs' audio interface. Its mic tee calls `saa.feed_audio(chunk)` for every frame, then forwards to the agent **only when the gate is open and the agent isn't speaking** — the second half stops the agent's own greeting/reply (picked up by the mic, no AEC) from looping back so it answers itself.
-- `@saa.on_prediction` → `attn.set_gate_open(ev.cls == 2)` -> **the gate**. Direct analog of the LiveKit realtime sample's `session.input.set_audio_enabled(p.aligned_class == 2)`: only device-directed speech reaches the agent.
+- `SAAFeedAudioInterface(DefaultAudioInterface(), saa)` -> wraps ElevenLabs' audio interface. Its mic tee feeds **every** frame to SAA, and sends ElevenLabs a **continuous stream**: the user's real audio while SAA says device-directed, **silence** otherwise (non-addressed speech, or while the agent is speaking — so its own echo never loops back). ElevenLabs keeps doing its own VAD/endpointing on that stream; SAA just decides what it hears.
+- `@saa.on_prediction` → `attn.update_gate(ev.cls == 2)` -> **the gate**, with a **close-debounce**: it opens on class-2 but closes only after a short streak of non-class-2 ticks (default 4 ≈ 1 s). That stops a single class-0 dip from chopping an utterance, and hands ElevenLabs a real trailing-silence tail — the end-of-turn cue it needs to reply.
 - `output()` / `interrupt()` → `saa.mark_responding(True/False)` — so SAA knows when the agent itself is speaking. `responding` is held for the agent TTS's **playback duration** (derived from the queued PCM bytes, +a short tail), because `DefaultAudioInterface` queues `output()` instantly but plays on a background thread; tracking `output()` idle instead would drop `responding` mid-playback and the agent's own echo would leak back.
 
 ### Warmup-gated greeting
