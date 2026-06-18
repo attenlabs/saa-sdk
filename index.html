@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>saa-js — orb demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "saa-js": "./node_modules/@attenlabs/saa-js/dist/index.js"
+      }
+    }
+  </script>
+</head>
+<body class="state-silent">
+
+<div class="divider"></div>
+
+<!-- Auth panel — fixed top-left, hides while running -->
+<div class="auth" id="authPanel">
+  <div class="auth-title">Setup</div>
+  <div class="auth-fields">
+    <label class="auth-field">
+      <span>SAA Token <span class="req">*</span></span>
+      <input type="text" id="input-token" placeholder="al_live_...">
+    </label>
+    <label class="auth-field">
+      <span>OpenAI Key <span class="opt">(optional)</span></span>
+      <input type="text" id="input-openai" placeholder="sk-...">
+    </label>
+  </div>
+  <div class="auth-hint">No token? <a href="https://attentionlabs.ai/dashboard/" target="_blank" rel="noopener">Sign up</a></div>
+</div>
+
+<!-- LEFT panel -->
+<div class="left">
+  <div class="wordmark">saa-js · orb demo</div>
+
+  <div class="main-label">
+    <div class="eyebrow">Live Prediction</div>
+    <div class="class-name" id="className">NOT CONNECTED</div>
+    <div class="conf-row">
+      <span class="conf-pct" id="confPct">--</span>
+      <span class="conf-word">Confidence</span>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-label">Faces</div>
+      <div class="stat-val" id="statFaces">--</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Voice activity</div>
+      <div class="stat-val" id="statVad">--</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Conv. state</div>
+      <div class="stat-val" id="statConv">--</div>
+    </div>
+  </div>
+
+  <div class="tokens-block" id="tokensBlock">
+    <div class="tokens-eyebrow">Tokens Saved</div>
+    <div class="tokens-row">
+      <div class="tokens-count" id="tokensCount">0000</div>
+      <div class="tokens-unit">tokens</div>
+    </div>
+    <div class="tokens-sub">Your LLM won't see tokens it doesn't need to.</div>
+  </div>
+</div>
+
+<!-- RIGHT panel -->
+<div class="right">
+  <div class="cam-wrap">
+    <div class="cam-placeholder">
+      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"><rect x="2" y="7" width="15" height="11" rx="2"/><path d="M17 9l5-3v10l-5-3"/></svg>
+    </div>
+    <video id="videoEl" autoplay playsinline muted></video>
+    <div class="cam-tag">CAM</div>
+  </div>
+
+  <div class="orb-wrap">
+    <div class="orb-ring-3"></div>
+    <div class="orb-ring-2"></div>
+    <div class="orb-ring"></div>
+    <div class="orb" id="orb">
+      <div class="orb-inner-glow"></div>
+      <div class="sound-bars" id="soundBars">
+        <div class="sound-bar" style="height:8px"></div>
+        <div class="sound-bar" style="height:8px"></div>
+        <div class="sound-bar" style="height:8px"></div>
+        <div class="sound-bar" style="height:8px"></div>
+        <div class="sound-bar" style="height:8px"></div>
+      </div>
+    </div>
+    <div class="warmup-bar" id="warmupBar" aria-hidden="true">
+      <div class="warmup-bar-fill" id="warmupBarFill"></div>
+    </div>
+  </div>
+
+  <div class="suggestion" id="suggestion">
+    <div class="suggestion-dot"></div>
+    <div class="suggestion-text" id="suggestionText">Try talking to the computer</div>
+  </div>
+</div>
+
+<!-- Bottom controls -->
+<div class="bottom-controls">
+  <div class="threshold-wrap">
+    <span>Threshold</span>
+    <input type="range" min="0" max="100" value="85" id="threshSlider">
+    <span class="threshold-val" id="threshVal">0.85</span>
+  </div>
+
+  <button class="btn-connect" id="btnConnect" disabled>Connect</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>

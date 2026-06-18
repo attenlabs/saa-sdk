@@ -1,0 +1,10 @@
+{
+  "name": "saa-js-demo",
+  "version": "0.1.0",
+  "description": "Browser demo that streams microphone and webcam to the SD Attention Server and routes detected speech through OpenAI Realtime.",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@attenlabs/saa-js": "^0.3.0"
+  }
+}
