@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
-    "attenlabs-saa>=0.1.0",
+    "attenlabs-saa>=0.6.0",
     "cv2-enumerate-cameras",
 ]
 

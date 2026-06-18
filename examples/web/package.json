@@ -5,6 +5,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@attenlabs/saa-js": "^0.3.0"
+    "@attenlabs/saa-js": "^0.6.0"
   }
 }

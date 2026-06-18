@@ -3,6 +3,9 @@ node_modules/
 dist/
 build/
 coverage/
+__pycache__/
+*.py[cod]
+*.egg-info/
 *.log
 *.env
 .vscode/

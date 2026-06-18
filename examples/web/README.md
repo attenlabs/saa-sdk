@@ -14,11 +14,12 @@ Everything runs in the browser. The server tells you *when* someone is speaking 
 
 Follow these steps in order:
 
-### 1. Clone and install
+### 1. Install
+
+From a checkout of the [saa-sdk](https://github.com/attenlabs/saa-sdk) monorepo:
 
 ```bash
-git clone https://github.com/attenlabs/saa-js-demo
-cd saa-js-demo
+cd examples/web
 npm install
 ```
 

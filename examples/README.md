@@ -6,7 +6,18 @@
 
 # Examples
 
-Runnable integrations of SAA into voice-agent stacks. Each consumes a public package — no example depends on a private model artifact.
+Runnable SAA examples. The two **streaming-SDK demos** below show the SDK driving its own capture loop end to end; the rest integrate SAA into third-party voice-agent stacks (LiveKit, Pipecat, ElevenLabs). Each consumes a public package — no example depends on a private model artifact.
+
+## Streaming SDK (start here)
+
+The SDK captures mic + webcam itself, streams to the SAA cloud, and routes detected turns to an LLM (OpenAI Realtime shown). No agent framework in the loop — the shortest path from a token to live predictions. One demo per language:
+
+| Sample | What it shows | Run |
+|---|---|---|
+| [`python/`](./python) | `attenlabs-saa` in a terminal: live ConvoStatus predictions, VAD, and conversation state in an ASCII status panel; turns routed to OpenAI Realtime. | `python main.py` |
+| [`web/`](./web) | `@attenlabs/saa-js` in the browser: an orb UI + guided flow, turns routed to OpenAI Realtime. | `npx serve` |
+
+Both need only a `SAA_API_KEY` (the Python demo also accepts `--token`; the web demo takes the token in its UI or via `?token=`). An OpenAI key is optional — omit it to just watch predictions.
 
 ## LiveKit Agents
 

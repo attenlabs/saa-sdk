@@ -26,6 +26,7 @@ Published registries:
 
 ### Examples
 
+- Added `python/` and `web/` streaming-SDK demos (subtree-merged from the standalone demo repos): the SDK driving its own capture loop end to end, with detected turns routed to OpenAI Realtime.
 - The `livekit/web` and `pipecat/web` browser samples now render the native warmup and AI-responding states (the prediction card shows a distinct "responding" colour during AI playback instead of "silent").
 
 ## Streaming SDKs — 0.3.x

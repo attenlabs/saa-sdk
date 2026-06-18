@@ -71,11 +71,12 @@ Linux (Debian/Ubuntu):
 sudo apt-get install -y libportaudio2 libasound2-dev
 ```
 
-### 5. Clone and install the demo
+### 5. Install the demo
+
+From a checkout of the [saa-sdk](https://github.com/attenlabs/saa-sdk) monorepo:
 
 ```bash
-git clone https://github.com/attenlabs/saa-py-demo
-cd saa-py-demo
+cd examples/python
 pip install attenlabs-saa cv2-enumerate-cameras simpleaudio
 ```
 
