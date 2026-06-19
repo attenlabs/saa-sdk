@@ -38,7 +38,7 @@ await client.start({ videoElement: videoEl });
 
 | Option             | Type     | Default                              | Description |
 | ------------------ | -------- | ------------------------------------ | ----------- |
-| `token`            | string   | —                                    | Your API key from attentionlabs.ai. |
+| `token`            | string   | none                                    | Your API key from attentionlabs.ai. |
 | `initialThreshold` | number   | `0.7`                                | Confidence threshold for predictions (0-1). |
 | `enableAudio`      | boolean  | `true`                               | Capture the mic internally. Set `false` to push audio via `feedAudio()`. |
 | `enableVideo`      | boolean  | `true`                               | Capture the camera internally. Set `false` for audio-only or to push frames via `feedVideo()`. |
@@ -64,9 +64,9 @@ await client.start({ videoElement: videoEl });
 
 | Event            | Payload |
 | ---------------- | ------- |
-| `connected`      | — |
-| `started`        | — |
-| `warmupComplete` | — |
+| `connected`      | none |
+| `started`        | none |
+| `warmupComplete` | none |
 | `prediction`     | `{ cls, rawCls, confidence, source, numFaces, responding }` |
 | `vad`            | `{ probability, isSpeech }` |
 | `state`          | `{ state }` (one of `listening`, `sending`, `cancelled`, `idle`) |
