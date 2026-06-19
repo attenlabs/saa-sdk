@@ -1,4 +1,4 @@
-# voice_agent — SAA-gated ElevenLabs Conversational AI
+# voice_agent: SAA-gated ElevenLabs Conversational AI
 
 An [ElevenLabs Conversational AI](https://elevenlabs.io/docs/eleven-agents/overview) agent with **Attention Labs SAA** addressee gating wired on top, via the streaming SDK's `feed_audio` ingestion.
 
@@ -7,16 +7,16 @@ An [ElevenLabs Conversational AI](https://elevenlabs.io/docs/eleven-agents/overv
 Single file ([`agent.py`](./agent.py)). The moving parts:
 
 - `AttentionClient(token=..., enable_audio=False, enable_video=False)` -> streaming SDK in **feed mode**: it opens the cloud WebSocket but captures nothing itself.
-- `SAAFeedAudioInterface(DefaultAudioInterface(), saa)` -> wraps ElevenLabs' audio interface. Its mic tee feeds **every** frame to SAA, and sends ElevenLabs a **continuous stream**: the user's real audio while SAA says device-directed, **silence** otherwise (non-addressed speech, or while the agent is speaking — so its own echo never loops back). ElevenLabs keeps doing its own VAD/endpointing on that stream; SAA just decides what it hears.
+- `SAAFeedAudioInterface(DefaultAudioInterface(), saa)` -> wraps ElevenLabs' audio interface. Its mic tee feeds **every** frame to SAA, and sends ElevenLabs a **continuous stream**: the user's real audio while SAA says device-directed, **silence** otherwise (non-addressed speech, or while the agent is speaking so its own echo never loops back). ElevenLabs keeps doing its own VAD/endpointing on that stream; SAA just decides what it hears.
 - `@saa.on_prediction` → `attn.update_gate(ev.cls)` -> **the gate**: it opens on class-2 (device-directed), closes immediately on class-1 (human-directed). ElevenLabs endpoints on the silence the closed gate streams, then replies.
-- `output()` / `interrupt()` → `saa.mark_responding(True/False)` — so SAA knows when the agent itself is speaking. `responding` is held for the agent TTS's **playback duration** (derived from the queued PCM bytes, +a short tail), because `DefaultAudioInterface` queues `output()` instantly but plays on a background thread; tracking `output()` idle instead would drop `responding` mid-playback and the agent's own echo would leak back.
+- `output()` / `interrupt()` → `saa.mark_responding(True/False)`, so SAA knows when the agent itself is speaking. `responding` is held for the agent TTS's **playback duration** (derived from the queued PCM bytes, +a short tail), because `DefaultAudioInterface` queues `output()` instantly but plays on a background thread; tracking `output()` idle instead would drop `responding` mid-playback and the agent's own echo would leak back.
 
 ### Warmup-gated greeting
 
-SAA's model isn't classifying for real until its inference buffer fills (~10–15 s of audio). If the agent greeted immediately, it would speak into a cold classifier and the gate would be unreliable on the user's first reply. So:
+SAA's model isn't classifying for real until its inference buffer fills (~10-15 s of audio). If the agent greeted immediately, it would speak into a cold classifier and the gate would be unreliable on the user's first reply. So:
 
-- `attn.prime()` starts the mic feeding SAA *before* the ElevenLabs session connects — SAA warms up on real audio while the agent stays silent (gate closed, nothing forwarded yet).
-- `@saa.on_warmup_complete` is SAA's **native** "warmed up + predicting" signal (first real prediction). The agent's `start_session()` (which triggers the greeting) is held until it fires — with a 20 s timeout fallback so a SAA stall still lets the agent greet.
+- `attn.prime()` starts the mic feeding SAA *before* the ElevenLabs session connects. SAA warms up on real audio while the agent stays silent (gate closed, nothing forwarded yet).
+- `@saa.on_warmup_complete` is SAA's **native** "warmed up + predicting" signal (first real prediction). The agent's `start_session()` (which triggers the greeting) is held until it fires, with a 20 s timeout fallback so a SAA stall still lets the agent greet.
 
 The payoff: the agent greets only once SAA is live, and because SAA is already warm, the fail-closed gate works correctly from the very first user turn.
 

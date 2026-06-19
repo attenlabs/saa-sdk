@@ -1,17 +1,15 @@
 # SAA + ElevenLabs Conversational AI
 
-A reference sample that adds **Attention Labs SAA** addressee gating to an [ElevenLabs Conversational AI](https://elevenlabs.io/docs/eleven-agents/overview) agent — so the agent only responds to speech the user actually directed at it, not to side conversations or background voices.
+A sample that enables your [ElevenLabs Conversational AI](https://elevenlabs.io/docs/eleven-agents/overview) agent to only respond when people are talking to it, and stay silent to side conversations or background voices.
 
-## The integration shape — streaming SDK feed
+## How SAA integrates
 
-ElevenLabs runs its agent inside **its own sealed WebRTC room**, so this sample uses the **streaming SDK**:
+ElevenLabs runs its agent inside its own sealed WebRTC room, so this sample uses the streaming SDK:
 
 1. ElevenLabs' Python SDK exposes `AudioInterface`, a clean 16-bit-PCM seam for the user mic and the agent's TTS.
-2. The sample wraps it and **feeds** the user mic to the SAA cloud via [`attenlabs-saa`](../../packages/saa-py)'s `feed_audio()` (the SDK is in feed mode: `enable_audio=False`, it captures nothing itself).
-3. SAA classifies each frame on Attention Labs' infrastructure and emits `prediction` / `vad` / `interrupt` events.
+2. The sample wraps it and feeds the user mic to SAA via [`attenlabs-saa`](../../packages/saa-py)'s `feed_audio()` (the SDK is in feed mode: `enable_audio=False`, it captures nothing itself).
+3. SAA classifies each frame and emits `prediction` / `vad` / `interrupt` events.
 4. The sample gates the agent on those events and forwards only device-directed audio onward.
-
-No model weights, no ML dependencies, and no media leave for anywhere but the SAA cloud you authenticate to.
 
 ## Samples
 
@@ -70,7 +68,7 @@ saa.start(); conversation.start_session()
 
 ## Shared environment
 
-One env file — [`.env`](./.env.example) in this directory:
+One env file, [`.env`](./.env.example) in this directory:
 
 | Key | Purpose |
 |---|---|
@@ -80,7 +78,7 @@ One env file — [`.env`](./.env.example) in this directory:
 
 ## Requirements & limitations
 
-- **Audio-only** — ElevenLabs gives SAA no video, so class-1 ("talking to a human") is weaker than on the multimodal LiveKit / Pipecat paths.
+- **Audio-only**, ElevenLabs gives SAA no video, so class-1 ("talking to a human") is weaker than on the multimodal LiveKit / Pipecat paths.
 - The gate opens ~250 ms after device-directed speech starts (classifier latency); a hard gate can clip an utterance's first syllable. See the sample README for the softer `register_user_activity` alternative.
 - Interjection is JS-only today, so it isn't wired in this Python sample.
 - Barge-in is handled by ElevenLabs' own VAD.

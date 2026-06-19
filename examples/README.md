@@ -1,54 +1,52 @@
 <p align="center">
   <a href="../README.md">
-    <img alt="SAA: Selective Auditory Attention" src="../assets/saa-hero-light.svg" width="326">
+    <img alt="SAA: Selective Attention" src="../assets/saa-hero-light.svg" width="326">
   </a>
 </p>
 
 # Examples
 
-Runnable SAA examples. The two **streaming-SDK demos** below show the SDK driving its own capture loop end to end; the rest integrate SAA into third-party voice-agent stacks (LiveKit, Pipecat, ElevenLabs). Each consumes a public package — no example depends on a private model artifact.
+Runnable SAA examples. The two **streaming-SDK demos** below show the SDK driving its own capture loop end to end; the rest integrate SAA into third-party voice-agent stacks (LiveKit, Pipecat, ElevenLabs). Each consumes a public package, no example depends on a private model artifact.
 
 ## Streaming SDK (start here)
 
-The SDK captures mic + webcam itself, streams to the SAA cloud, and routes detected turns to an LLM (OpenAI Realtime shown). No agent framework in the loop — the shortest path from a token to live predictions. One demo per language:
+The SDK captures mic + webcam itself, streams to SAA, and routes detected turns to an LLM (OpenAI Realtime shown). No agent framework in the loop, the shortest path from a token to live predictions. One demo per language:
 
 | Sample | What it shows | Run |
 |---|---|---|
 | [`python/`](./python) | `attenlabs-saa` in a terminal: live ConvoStatus predictions, VAD, and conversation state in an ASCII status panel; turns routed to OpenAI Realtime. | `python main.py` |
 | [`web/`](./web) | `@attenlabs/saa-js` in the browser: an orb UI + guided flow, turns routed to OpenAI Realtime. | `npx serve` |
 
-Both need only a `SAA_API_KEY` (the Python demo also accepts `--token`; the web demo takes the token in its UI or via `?token=`). An OpenAI key is optional — omit it to just watch predictions.
+Both need only a `SAA_API_KEY` (the Python demo also accepts `--token`; the web demo takes the token in its UI or via `?token=`). An OpenAI key is optional, omit it to just watch predictions.
 
 ## LiveKit Agents
 
-SAA joins your LiveKit room as a hidden participant (the hosted bridge) and gates the session through the `"saa"` data topic. Three samples in [`livekit/`](./livekit):
+SAA joins your LiveKit room and gates the session through the `"saa"` data topic. Two samples in [`livekit/`](./livekit):
 
 | Sample | What it shows | Run |
 |---|---|---|
-| [`livekit/voice_agent_cascaded/`](./livekit/voice_agent_cascaded) | SAA gating a cascaded pipeline (Silero VAD → Deepgram STT → OpenAI LLM → Cartesia TTS), with barge-in and proactive interjection. | `python src/agent.py dev` |
-| [`livekit/voice_agent_realtime/`](./livekit/voice_agent_realtime) | SAA gating an OpenAI Realtime speech-to-speech agent — the case stock LiveKit can't gate (no VAD slot). | `python agent.py dev` |
+| [`livekit/voice_agent_realtime/`](./livekit/voice_agent_realtime) | SAA gating an OpenAI Realtime speech-to-speech agent, with barge-in and proactive interjection. | `python agent.py dev` |
 | [`livekit/web/`](./livekit/web) | A vanilla HTML + `livekit-client` browser client rendering SAA's prediction overlay, plus a dev FastAPI token server. | `uvicorn token_server:app` |
 
-All target **LiveKit Agents 1.5.x** (`AgentServer` + `@server.rtc_session()`). See [`livekit/README.md`](./livekit/README.md) for the shared environment and the five lines that integrate SAA.
+All target **LiveKit Agents 1.5.x** (`AgentServer` + `@server.rtc_session()`). See [`livekit/README.md`](./livekit/README.md) for the shared environment and the integration code.
 
 ## Pipecat (on Daily)
 
-The Pipecat sibling. SAA joins your Daily room as a hidden participant and publishes events on Daily's app-message channel under the `"saa"` topic. Your Pipecat pipeline consumes them through `AttentionEngine`, which hooks `DailyTransport.event_handler("on_app_message")`. Two samples in [`pipecat/`](./pipecat):
+The Pipecat sibling. SAA joins your Daily room and publishes events on Daily's app-message channel under the `"saa"` topic. Your Pipecat pipeline consumes them through `AttentionEngine`, which hooks `DailyTransport.event_handler("on_app_message")`. One sample in [`pipecat/`](./pipecat):
 
 | Sample | What it shows | Run |
 |---|---|---|
-| [`pipecat/voice_agent_cascaded/`](./pipecat/voice_agent_cascaded) | SAA gating a cascaded Pipecat pipeline (Silero VAD → Deepgram STT → OpenAI LLM → Cartesia TTS) on Daily, with barge-in and proactive interjection. | `python src/agent.py` |
 | [`pipecat/web/`](./pipecat/web) | A vanilla HTML + `@daily-co/daily-js` browser client rendering SAA's prediction overlay, plus a dev FastAPI token server that creates an ephemeral Daily room. | `uvicorn token_server:app` |
 
 Targets **pipecat-ai >= 1.0.0** (the `pipecat.transports.daily.transport` canonical import path) and **daily-python >= 0.19.0**. See [`pipecat/README.md`](./pipecat/README.md) for the shared environment.
 
 ## ElevenLabs Conversational AI
 
-ElevenLabs runs its agent inside its own sealed WebRTC room, so this sample uses the **streaming SDK's `feed_audio` ingestion**: it taps ElevenLabs' Python `AudioInterface` (the clean PCM seam), feeds the user mic to the SAA cloud, and gates the agent on the events that come back. 
+ElevenLabs runs its agent inside its own sealed WebRTC room, so this sample uses the **streaming SDK's `feed_audio` ingestion**: it taps ElevenLabs' Python `AudioInterface` (the clean PCM seam), feeds the user mic to SAA, and gates the agent on the events that come back.
 
 | Sample | What it shows | Run |
 |---|---|---|
-| [`elevenlabs/voice_agent/`](./elevenlabs/voice_agent) | SAA gating an ElevenLabs Conversational AI agent — only device-directed speech reaches the model — via `attenlabs-saa`'s `feed_audio`. | `python agent.py` |
+| [`elevenlabs/voice_agent/`](./elevenlabs/voice_agent) | SAA gating an ElevenLabs Conversational AI agent so only device-directed speech reaches the model, via `attenlabs-saa`'s `feed_audio`. | `python agent.py` |
 
 Needs **attenlabs-saa >= 0.4.0** (the `feed_audio` API) and **elevenlabs >= 2.45**.
 
@@ -64,15 +62,15 @@ Needs **attenlabs-saa >= 0.4.0** (the `feed_audio` API) and **elevenlabs >= 2.45
 
 ## Conventions
 
-- `SAA_API_KEY` is your Attention Labs API key — the same credential for both the streaming SDK and the hosted bridge (LiveKit and Pipecat). Get one at [attentionlabs.ai](https://attentionlabs.ai).
+- `SAA_API_KEY` is your Attention Labs API key, the same credential for the streaming SDK and the LiveKit and Pipecat samples. Get one at [attentionlabs.ai](https://attentionlabs.ai).
 - LiveKit samples additionally need `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, plus per-sample provider keys. See each sample's `.env.example`.
-- Pipecat samples need `DAILY_API_KEY` (Daily REST, customer-owned — mints the hidden-bot meeting token locally; never seen by our broker), plus a `DAILY_ROOM_URL` + bot meeting token for the cascaded sample, plus per-sample provider keys.
+- Pipecat samples need `DAILY_API_KEY` (Daily REST key; mints the bot meeting token locally), plus per-sample provider keys.
 
 ## See also
 
-- [`packages/saa-js/README.md`](../packages/saa-js/README.md), [`packages/saa-py/README.md`](../packages/saa-py/README.md) — streaming SDK reference.
-- [`packages/saa-livekit-client/README.md`](../packages/saa-livekit-client/README.md) — LiveKit hosted bridge.
-- [`packages/saa-pipecat-client/README.md`](../packages/saa-pipecat-client/README.md) — Pipecat-on-Daily hosted bridge.
+- [`packages/saa-js/README.md`](../packages/saa-js/README.md), [`packages/saa-py/README.md`](../packages/saa-py/README.md): the streaming SDK reference.
+- [`packages/saa-livekit-client/README.md`](../packages/saa-livekit-client/README.md): the LiveKit client.
+- [`packages/saa-pipecat-client/README.md`](../packages/saa-pipecat-client/README.md): the Pipecat-on-Daily client.
 
 ---
 

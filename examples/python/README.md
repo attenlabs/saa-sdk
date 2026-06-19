@@ -117,9 +117,9 @@ After a short warmup, the app prints a live status panel:
 ╚══════════════════════════════════════════════════════════════════════════════╝
 ```
 
-- **CURRENT MODE** — the latest ConvoStatus prediction and confidence
-- **BUFFER** — rolling window of the last 10 predictions
-- **LLM STATE** — `idle` → `listening` → `processing` → `speaking`
+- **CURRENT MODE**, the latest ConvoStatus prediction and confidence
+- **BUFFER**, rolling window of the last 10 predictions
+- **LLM STATE**, `idle` → `listening` → `processing` → `speaking`
 
 Once enough consecutive `2`s land in the buffer, the LLM state flips to `listening`. When you stop talking (or turn to talk to someone else) the captured audio is sent to OpenAI Realtime, and the reply plays through your speakers.
 
@@ -131,9 +131,9 @@ Every `prediction` event carries a ConvoStatus value:
 
 | State | Meaning                                            |
 |-------|----------------------------------------------------|
-| `0` | Silence — no speech detected                         |
-| `1` | Human-to-human — people are talking to each other    |
-| `2` | Human-to-device — someone is talking to the computer |
+| `0` | Silence, no speech detected                         |
+| `1` | Human-to-human, people are talking to each other    |
+| `2` | Human-to-device, someone is talking to the computer |
 
 Your pipeline only needs to act on state `2`. States `0` and `1` let you skip ASR entirely and avoid sending irrelevant audio to your LLM. 
 
@@ -141,7 +141,7 @@ Your pipeline only needs to act on state `2`. States `0` and `1` let you skip AS
 
 ## Tuning
 
-- `--threshold` (default `0.85`) — minimum confidence for a state-`2` prediction to count as device-directed.
+- `--threshold` (default `0.85`), minimum confidence for a state-`2` prediction to count as device-directed.
 - The app triggers `listening` after **4 consecutive** state-`2` predictions above threshold. Edit `_BUFFER_LEN` and the trigger logic in [main.py](main.py) to change this.
 
 Lower the threshold for more sensitive triggering; raise it for fewer false starts.
@@ -167,7 +167,7 @@ Lower the threshold for more sensitive triggering; raise it for fewer false star
 
 ## SDK docs
 
-Full API reference — constructor, methods, events, types, threading model — lives in [**DOCS.md**](DOCS.md).
+Full API reference, constructor, methods, events, types, threading model, lives in [**DOCS.md**](DOCS.md).
 
 ---
 
