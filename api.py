@@ -112,9 +112,9 @@ async def start_attention_session(
                               room scope on `agent_token`.
         participant_identity: Identity of the human user whose tracks the
                               agent should analyze.
-        attention_config:     Optional config overrides — vetted subset only.
-                              See docs/livekit-integration.md for the public
-                              field list. Unknown fields are silently ignored.
+        attention_config:     Optional config overrides (vetted subset only).
+                              See https://attentionlabs.ai/docs/livekit for the
+                              public field list. Unknown fields are silently ignored.
         api_base:             Override the API base URL (testing / private envs).
         timeout:              HTTP timeout for the POST call.
     """
