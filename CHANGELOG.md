@@ -6,30 +6,36 @@ Published registries:
 
 - [`@attenlabs/saa-js`](https://www.npmjs.com/package/@attenlabs/saa-js) on npm
 - [`attenlabs-saa`](https://pypi.org/project/attenlabs-saa/) on PyPI
+- [`saa-livekit-client`](https://pypi.org/project/saa-livekit-client/) on PyPI
+- [`saa-pipecat-client`](https://pypi.org/project/saa-pipecat-client/) on PyPI
 
-## Unreleased
+## 2026-06-19
 
-### `@attenlabs/saa-js` 0.4.0
+### `@attenlabs/saa-js` 0.6.0
 
-- Native warmup signal: `warmupComplete` now fires on the server's `started` pivot (after the model warms up) instead of being inferred from the first non-zero-confidence prediction. The inference path is kept as a fallback for older servers.
+- Native warmup signal: `warmupComplete` fires on the server's dedicated `warmup_complete` message, sent once the model is warmed up and producing real predictions (replacing the old heuristic of inferring readiness from the first non-zero-confidence prediction).
 - Native AI-responding state: `PredictionEvent.responding` reflects the server's per-tick flag, with `source === "ai_responding"` as the old-server fallback. Consumers no longer need to synthesize a "responding" state during AI playback.
+- External-frame capture: `feedAudio` / `feedVideo` accept caller-supplied media, and `serverProfile` (auto-selected `audio_only` when video is disabled) lets the SDK gate stacks that own their own capture loop.
 
-### `attenlabs-saa` 0.5.0
+### `attenlabs-saa` 0.6.0
 
 - Parity with `@attenlabs/saa-js`: added the `interjection` event (`on_interjection` + `InterjectionEvent`) and `TurnReadyEvent.context` (e.g. `"interjection_follow_up"`), both previously missing.
-- Native warmup signal (`warmup_complete` on `started`, conf>0 fallback) and native AI-responding state (`PredictionEvent.responding`), matching the JS SDK.
+- Native warmup signal: `on_warmup_complete` fires on the server's dedicated `warmup_complete` message (replacing the old first-non-zero-confidence heuristic), plus native AI-responding state (`PredictionEvent.responding`), matching the JS SDK.
+- External-frame capture: `feed_audio` / `feed_video` accept caller-supplied media, and `server_profile` (auto-selected `audio_only` when `enable_video=False`) lets the SDK gate stacks that own their own capture loop.
 
-### `saa-livekit-client` 0.2.0 · `saa-pipecat-client` 0.2.0
+### `saa-livekit-client` 0.3.0 · `saa-pipecat-client` 0.3.0
 
 - `PredictionEvent.responding` surfaces the server's native AI-responding flag (falls back to `source == "ai_responding"`).
+- `on_warmup` fires on the server's native `warmup_complete` message.
 - Standardized on the `SAA_API_KEY` environment variable across docstrings and quickstarts.
+- First public release of `saa-pipecat-client` (Pipecat-on-Daily hosted bridge).
 
 ### Examples
 
 - Added `python/` and `web/` streaming-SDK demos (subtree-merged from the standalone demo repos): the SDK driving its own capture loop end to end, with detected turns routed to OpenAI Realtime.
 - The `livekit/web` and `pipecat/web` browser samples now render the native warmup and AI-responding states (the prediction card shows a distinct "responding" colour during AI playback instead of "silent").
 
-## Streaming SDKs — 0.3.x
+## Streaming SDKs, 0.3.x
 
 ### `@attenlabs/saa-js`
 
@@ -46,7 +52,7 @@ Published registries:
 - Decorator-based handlers: `@client.on_turn_ready`, `@client.on_prediction`, `@client.on_vad`, etc.
 - Configurable mic and camera; `enable_video=False` for audio-only deployments.
 
-## LiveKit hosted bridge — `saa-livekit-client` 0.1.0
+## LiveKit hosted bridge, `saa-livekit-client` 0.1.0
 
 - Summons a hidden participant into the customer's LiveKit room that runs the classifier server-side and publishes events on the `"saa"` data topic.
 - `AttentionEngine` exposes `on_prediction` / `on_vad` / `on_turn_ready` / `on_interrupt` / `on_interjection` callbacks and `mute` / `unmute` / `responding_start` / `responding_stop` / `set_threshold` actions.
@@ -55,6 +61,6 @@ Published registries:
 
 ## Examples
 
-- `examples/livekit/` — three runnable LiveKit Agents 1.5.x samples: `voice_agent_cascaded`, `voice_agent_realtime`, and `web`.
+- `examples/livekit/`, three runnable LiveKit Agents 1.5.x samples: `voice_agent_cascaded`, `voice_agent_realtime`, and `web`.
 
 Adapters for other stacks (Twilio, Pipecat, OpenAI Realtime, ElevenLabs CAI) are on the roadmap, see [`README.md`](./README.md#roadmap).

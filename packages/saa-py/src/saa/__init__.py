@@ -1,4 +1,4 @@
-"""saa-py — Python SDK for the SD Attention Server (SAA)."""
+"""Python SDK for the Attention Labs SAA inference server."""
 
 from __future__ import annotations
 

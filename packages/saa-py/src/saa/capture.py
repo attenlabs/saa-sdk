@@ -78,11 +78,9 @@ class MicCapture:
 
     def _audio_callback(self, indata, frames, time_info, status):
         # Keep capturing even when muted. The server-side mic_muted flag
-        # (set via the "mute" control action) is what gates the LLM speech
-        # accumulator; the SD-SAA inference ring buffer must keep receiving
-        # live audio every tick or AudioMetricsCalculator computes
-        # amplitude=0 during AI response, which is the key divergence vs
-        # on-device-debug where the mic is always live.
+        # (set via the "mute" control action) only gates the LLM speech
+        # accumulator; keep streaming audio every tick so the server's
+        # attention inference stays live during AI playback.
         samples = indata[:, 0] if indata.ndim > 1 else indata.ravel()
         if self._src_rate != TARGET_AUDIO_RATE:
             samples = _linear_downsample(samples, self._src_rate, TARGET_AUDIO_RATE)

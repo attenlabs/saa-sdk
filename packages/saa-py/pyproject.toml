@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 authors = [
     { name = "Attention Labs" },
 ]
-keywords = ["sd-attention", "attention", "saa", "audio", "video", "vad", "realtime", "websocket"]
+keywords = ["attention", "saa", "audio", "video", "vad", "realtime", "websocket"]
 classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
