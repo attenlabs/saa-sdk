@@ -6,7 +6,8 @@
 |---|---|---|
 | `@attenlabs/saa-js` | `0.3.x` | Supported |
 | `attenlabs-saa` (PyPI) | `0.3.x` | Supported |
-| Older versions | < 0.3.0 | End-of-life; please upgrade |
+| `saa-livekit-client` (PyPI) | `0.1.x` | Supported |
+| Older versions | (prior) | End-of-life; please upgrade |
 
 ## Reporting a vulnerability
 
@@ -24,23 +25,22 @@ If you discover a security issue in the SAA SDKs, the cloud service, or any fram
 
 **In scope.**
 
-- The published SDKs (`@attenlabs/saa-js`, `attenlabs-saa`).
-- The helper packages in this repository (`saa-gate`, `saa-proactive-js`, `saa-proactive-py`).
-- The framework-adapter examples under [`examples/`](./examples/) when used as documented.
+- The published packages (`@attenlabs/saa-js`, `attenlabs-saa`, `saa-livekit-client`).
+- The examples under [`examples/`](./examples/) when used as documented.
 - The cloud service at `server.attentionlabs.ai` (please mark cloud-service reports clearly).
 
 **Out of scope.**
 
 - Customer-controlled deployments. Token-mint hygiene, API-key storage, network policy, and downstream STT / LLM / TTS providers are the customer's responsibility.
 - Vulnerabilities that require physical access to the user's device, browser plugins, or admin-level OS access.
-- Findings that depend on an explicitly insecure configuration (e.g. embedding `ATTENLABS_TOKEN` in browser source).
+- Findings that depend on an explicitly insecure configuration (e.g. embedding `SAA_API_KEY` in browser source).
 
 ## Token rotation
 
-SAA tokens (the `ATTENLABS_TOKEN` env var, or the `token` field passed to `AttentionClient`) are bearer credentials — treat them like any other API key.
+SAA tokens (the `SAA_API_KEY` env var, or the `token` field passed to `AttentionClient`) are bearer credentials, treat them like any other API key.
 
-- **Server-issued, short-lived for browser surfaces.** Production browser deployments should mint a short-lived JWT server-side per session (see [`examples/cloud-live-demo/`](./examples/cloud-live-demo/) for the token-broker shape, and [`examples/production-gate/`](./examples/production-gate/) for the policy-gated variant). Long-lived tokens should never ship in untrusted bundles.
-- **Rotate on suspected compromise.** Re-mint via the dashboard; the previous token continues to work until its TTL expires unless explicitly revoked.
+- **Server-issued, short-lived for browser surfaces.** Production browser deployments should mint a short-lived token server-side per session (see [`examples/livekit/web/token_server.py`](./examples/livekit/web/token_server.py) for the token-broker shape). Long-lived tokens should never ship in untrusted bundles.
+- **Rotate on suspected compromise.** Re-issue via [attentionlabs.ai](https://attentionlabs.ai); the previous token continues to work until its TTL expires unless explicitly revoked.
 - **Per-token kill switch.** The cloud service can invalidate a token immediately on request to security@attentionlabs.ai.
 - **Never paste a token into a public repo, pastebin, or screenshot.** Treat them the way you'd treat an OpenAI key.
 
