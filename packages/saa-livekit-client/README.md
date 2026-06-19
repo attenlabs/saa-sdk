@@ -119,15 +119,18 @@ Environment: `SAA_API_KEY`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_UR
 
 | Event | Fires | Payload |
 |---|---|---|
-| `PredictionEvent` | every 250 ms | `raw_class`, `aligned_class` (0/1/2), `confidence`, `source`, `num_faces` |
+| `PredictionEvent` | every 250 ms | `raw_class`, `aligned_class` (0/1/2), `confidence`, `source`, `num_faces`, `responding` |
 | `VADEvent` | every 250 ms | `is_speech`, `probability` |
+| warmup | model warmed up, predictions begin | — |
 | listening_start / listening_cancelled | state edges | — |
 | `TurnReadyEvent` | end of user turn | `audio_pcm16`, `duration`, `frames`, `context` |
 | `InterruptEvent` | user barges in during AI playback | `confidence` |
 | `InterjectionEvent` | humans went quiet after side-chat | `reason`, `audio_pcm16`, `duration` |
 | `ErrorEvent` | out-of-band errors | `code`, `message` |
 
-Classes: `0`=silent, `1`=human-to-human, `2`=human-to-device.
+Classes: `0`=silent, `1`=human-to-human, `2`=human-to-device. `responding` is `True` while the AI is mid-playback.
+
+Each is delivered through an `@engine.on_*` callback: `on_prediction`, `on_vad`, `on_warmup`, `on_listening_start`, `on_listening_cancelled`, `on_turn_ready`, `on_interrupt`, `on_interjection`, `on_error`.
 
 ## Upstream actions
 
