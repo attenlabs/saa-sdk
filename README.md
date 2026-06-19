@@ -15,12 +15,9 @@
 
 <p align="center">Drop-in for the voice-agent stack you already use:</p>
 <p align="center">
-  <a href="./examples/twilio/"><img alt="Twilio" src="./assets/brands/twilio.svg" height="28"></a>
-  &nbsp;&nbsp;
   <a href="./examples/pipecat/"><img alt="Pipecat" src="./assets/brands/pipecat.svg" height="28"></a>
   &nbsp;&nbsp;
   <a href="./examples/livekit/"><img alt="LiveKit" src="./assets/brands/livekit.svg" height="28"></a>
-  &nbsp;&nbsp;
   &nbsp;&nbsp;
   <a href="./examples/elevenlabs/"><img alt="ElevenLabs Conversational AI" src="./assets/brands/elevenlabs.svg" height="28"></a>
 </p>
@@ -64,8 +61,6 @@ A voice agent's microphone hears every voice in the room: yours, a coworker's, t
 | **LiveKit** | [`saa-livekit-client`](./packages/saa-livekit-client) | you run a [LiveKit Agents](https://docs.livekit.io/agents/) voice agent. SAA joins your room and gates the session. |
 | **Pipecat (Daily)** | [`saa-pipecat-client`](./packages/saa-pipecat-client) | you run a [Pipecat](https://github.com/pipecat-ai/pipecat) voice agent on Daily. SAA joins your Daily room and gates the pipeline through the `"saa"` app-message topic. |
 | **ElevenLabs** | [`attenlabs-saa`](./packages/saa-py) | you run an [ElevenLabs Conversational AI](./examples/elevenlabs) agent. SAA gates it via the streaming SDK's `feed_audio` (its room is sealed, so SAA can't join it directly). |
-
-Twilio and OpenAI Realtime are on the [roadmap](#roadmap).
 
 ## Install
 
