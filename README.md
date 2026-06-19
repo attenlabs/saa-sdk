@@ -10,7 +10,7 @@
   <a href="https://www.npmjs.com/package/@attenlabs/saa-js"><img alt="npm" src="https://img.shields.io/npm/v/@attenlabs/saa-js?label=npm&color=D9FF00&labelColor=060d0f&style=for-the-badge"></a>
   <a href="https://pypi.org/project/attenlabs-saa/"><img alt="PyPI" src="https://img.shields.io/pypi/v/attenlabs-saa?label=pypi&color=D9FF00&labelColor=060d0f&style=for-the-badge"></a>
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-D9FF00?labelColor=060d0f&style=for-the-badge"></a>
-  <a href="./.github/workflows/test.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/attenlabs/saa/test.yml?branch=main&label=CI&color=D9FF00&labelColor=060d0f&style=for-the-badge"></a>
+  <a href="./.github/workflows/test.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/attenlabs/saa-sdk/test.yml?branch=main&label=CI&color=D9FF00&labelColor=060d0f&style=for-the-badge"></a>
 </p>
 
 <p align="center">Drop-in for the voice-agent stack you already use:</p>
