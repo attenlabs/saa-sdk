@@ -9,7 +9,4 @@ __pycache__/
 *.log
 *.env
 .vscode/
-
-# internal-only working docs — never commit to the public monorepo
-/HANDOFF.md
-/docs/demos-monorepo-merge-spec.md
+internal/**
