@@ -63,13 +63,14 @@ A full CLI demo wiring SAA + OpenAI Realtime lives at [**saa-py-demo**](https://
 from saa import AttentionClient, CameraConfig, MicConfig
 
 client = AttentionClient(
-    token="...",                    # API key, sent as WS subprotocol
-    url=None,                      # Server URL (default: wss://server.attentionlabs.ai/ws)
+    token="...",                    # API key — sent as WS subprotocol
+    url=None,                      # Server URL (default: https://broker.attentionlabs.ai)
     video=CameraConfig(),          # Webcam config
     audio=MicConfig(),             # Mic config
     initial_threshold=0.7,         # Device-class confidence threshold (0..1)
     enable_audio=True,             # Set False to skip mic capture
     enable_video=True,             # Set False to skip webcam capture
+    server_profile=None,           # Override server profile; auto "audio_only" when enable_video=False
 )
 ```
 
@@ -144,8 +145,8 @@ def handle(event):
 | decorator             | payload                                                                  | fires when                              |
 | --------------------- | ------------------------------------------------------------------------ | --------------------------------------- |
 | `@on_connected`       | —                                                                        | WebSocket opens                         |
-| `@on_started`         | —                                                                        | Server-side warmup complete             |
-| `@on_warmup_complete` | —                                                                        | First non-zero-confidence prediction    |
+| `@on_started`         | —                                                                        | Server has loaded the model             |
+| `@on_warmup_complete` | —                                                                        | Model warmed up and producing predictions |
 | `@on_prediction`      | `PredictionEvent`                                                        | Each attention prediction               |
 | `@on_vad`             | `VadEvent`                                                               | Voice activity update                   |
 | `@on_state`           | `StateEvent`                                                             | Conversation state transition           |
@@ -153,6 +154,7 @@ def handle(event):
 | `@on_config`          | `ConfigEvent`                                                            | Server acks a threshold change          |
 | `@on_stats`           | `StatsEvent`                                                             | Every ~10s with connection health       |
 | `@on_interrupt`       | `InterruptEvent`                                                         | User is barging in mid-LLM-response     |
+| `@on_interjection`    | `InterjectionEvent`                                                      | Proactive AI volunteer after humans go quiet |
 | `@on_error`           | `AttentionErrorEvent`                                                    | Connection, auth, or server error       |
 | `@on_disconnected`    | `DisconnectedEvent`                                                      | WebSocket closes                        |
 
@@ -165,6 +167,7 @@ cls: int            # 0 = silent, 1 = human-directed, 2 = device-directed
 confidence: float   # 0..1
 source: str         # "video" or "audio"
 num_faces: int      # faces detected in frame
+responding: bool    # True while the AI is mid-playback
 ```
 
 #### `VadEvent`
@@ -187,6 +190,7 @@ audio_pcm16: np.ndarray   # int16 array @ 16 kHz mono
 audio_base64: str          # same audio as base64, ready for OpenAI Realtime, etc.
 duration_sec: float        # duration in seconds
 frames: list[TurnFrame]    # JPEG stills, empty unless the server has frames_per_turn > 0
+context: str | None        # e.g. "interjection_follow_up"; None for normal turns
 ```
 
 #### `ConfigEvent`
@@ -220,6 +224,18 @@ consumer's job is to (a) fade and stop its local LLM playback over
 `fade_ms`, (b) cancel any in-flight LLM response, and (c) re-open the mic
 immediately (do not wait for the fade to finish, or the user's continued
 speech is dropped for the duration of the fade).
+
+#### `InterjectionEvent`
+
+```python
+reason: str                # why the volunteer fired
+audio_pcm16: np.ndarray    # int16 array @ 16 kHz mono (recent conversation audio)
+audio_base64: str          # same audio as base64
+duration_sec: float        # duration in seconds
+```
+
+Fires when humans chat and then go quiet, so the agent can volunteer a brief
+check-in. Hand `audio_base64` to your LLM as context for the volunteer prompt.
 
 #### `AttentionErrorEvent`
 
