@@ -56,15 +56,16 @@ A voice agent's microphone hears every voice in the room: yours, a coworker's, t
 - **No wake word.** SAA decides per-utterance from the audio (and optionally low-rate video) stream.
 - **Hosted.** A WebSocket to Attention Labs' cloud; the open SDKs are thin clients. On-device deployment is a separate enterprise licence.
 
-## Three ways to integrate
+## Ways to integrate
 
 | Shape | Package | Use it when |
 |---|---|---|
-| **Streaming SDK** | [`@attenlabs/saa-js`](./packages/saa-js), [`attenlabs-saa`](./packages/saa-py) | your app captures the audio/video itself, a browser tab, a kiosk, a custom Python app, and you want typed attention events to gate your own pipeline. |
+| **Streaming SDK** | [`@attenlabs/saa-js`](./packages/saa-js), [`attenlabs-saa`](./packages/saa-py) | your app captures the audio/video itself and you want typed attention events to gate your own pipeline. Good for web agents, mall kiosks, drive-through agents, and robots. |
 | **LiveKit** | [`saa-livekit-client`](./packages/saa-livekit-client) | you run a [LiveKit Agents](https://docs.livekit.io/agents/) voice agent. SAA joins your room and gates the session. |
 | **Pipecat (Daily)** | [`saa-pipecat-client`](./packages/saa-pipecat-client) | you run a [Pipecat](https://github.com/pipecat-ai/pipecat) voice agent on Daily. SAA joins your Daily room and gates the pipeline through the `"saa"` app-message topic. |
+| **ElevenLabs** | [`attenlabs-saa`](./packages/saa-py) | you run an [ElevenLabs Conversational AI](./examples/elevenlabs) agent. SAA gates it via the streaming SDK's `feed_audio` (its room is sealed, so SAA can't join it directly). |
 
-[ElevenLabs Conversational AI](./examples/elevenlabs) is also supported, via the streaming SDK's `feed_audio` ingestion (its room is sealed, so SAA can't join it directly). Twilio and OpenAI Realtime are on the [roadmap](#roadmap).
+Twilio and OpenAI Realtime are on the [roadmap](#roadmap).
 
 ## Install
 
@@ -164,7 +165,7 @@ The streaming SDKs expose `markResponding(true)` / `mark_responding(True)` so th
 
 ## How it composes
 
-SAA is the addressee decision that sits between your VAD and STT. Not a VAD, not a wake word, not an end-of-turn detector: those layers keep doing their jobs around it.
+SAA is the addressee decision that sits between your VAD and STT. It can complement your wakeword system or replace it.
 
 <p align="center">
   <img alt="Where SAA sits in your voice stack: noise suppression and VAD upstream, SAA addressee gate, then STT → LLM → TTS downstream" src="./assets/diagrams/where-saa-sits-dark.svg" width="820">
@@ -172,7 +173,7 @@ SAA is the addressee decision that sits between your VAD and STT. Not a VAD, not
 
 ## On-device deployment
 
-The open SDKs stream to the SAA cloud. For deployments where audio must stay on the device (telephony, embedded systems, wearables, robotics, kiosks) direct on-device licensing is available. Contact us via [attentionlabs.ai](https://attentionlabs.ai).
+The open SDKs stream to the SAA cloud. For deployments where audio must stay on the device (telephony, embedded systems, wearables, robotics, kiosks) direct on-device licensing is available. Contact us via [this link](https://attentionlabs.ai/#contact).
 
 ## Documentation
 
