@@ -57,7 +57,6 @@ Needs **attenlabs-saa >= 0.6.0** and **elevenlabs >= 2.45**.
 | Stack | Shape |
 |---|---|
 | Twilio Media Streams | μ-law 8 kHz → PCM16 telephony bridge (`feed_audio(..., sample_rate=8000)`) |
-| OpenAI Realtime | browser/edge gating of a realtime model |
 | Proactive-agent overlays | per-stack `mark_responding` lifecycle recipes |
 
 ## Conventions

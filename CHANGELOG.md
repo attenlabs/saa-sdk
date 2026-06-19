@@ -62,5 +62,3 @@ Published registries:
 ## Examples
 
 - `examples/livekit/`, two runnable LiveKit Agents 1.5.x samples: `voice_agent_realtime` and `web`.
-
-Adapters for other stacks (Twilio, Pipecat, OpenAI Realtime, ElevenLabs CAI) are on the roadmap, see [`README.md`](./README.md#roadmap).
