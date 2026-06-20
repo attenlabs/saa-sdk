@@ -1,32 +1,27 @@
-Attention Labs SAA — Selective Auditory Attention SDK
+Attention Labs SAA: Selective Auditory Attention SDK
 Copyright 2026 Attention Labs Incorporated
 
 This product includes software developed by Attention Labs Incorporated
 (https://attentionlabs.ai/), a Delaware corporation and wholly-owned subsidiary
 of Socero Inc. (Canada).
 
-Licensed under the Apache License, Version 2.0 (the "License"). The full
-license text is in the LICENSE file at the root of this distribution and at
-http://www.apache.org/licenses/LICENSE-2.0.
+Licensed under the MIT License. The full license text is in the LICENSE file
+at the root of this distribution.
 
 Patent notice
 -------------
 Portions of this software may practice methods covered by patents or pending
-patent applications associated with Attention Labs Incorporated. The Apache
-License 2.0 §3 patent grant scopes to those patent claims (if any) necessarily
-infringed by Contributions incorporated within this Work, and only to the
-extent that the licensee complies with the License. The status and scope of
-any granted or pending applications are not enumerated in this NOTICE.
-Commercial licensing of claims outside the Apache-2.0 §3 grant is handled
-separately; contact legal@attentionlabs.ai for licensing inquiries.
+patent applications associated with Attention Labs Incorporated. The MIT
+License grants no patent rights. The status and scope of any granted or pending
+applications are not enumerated in this NOTICE. Commercial patent licensing is
+handled separately; contact legal@attentionlabs.ai for licensing inquiries.
 
 Trademarks
 ----------
-"Attention Labs", "SAA", and "Selective Auditory Attention" are trademarks
-of Attention Labs Incorporated. Use of these names is governed by the
-Apache License 2.0 §6 (Trademarks) — the License does not grant permission
-to use them except as required for describing the origin of the Work and
-reproducing the content of this NOTICE file.
+"Attention Labs", "SAA", and "Selective Auditory Attention" are trademarks of
+Attention Labs Incorporated. The MIT License grants no trademark rights. Use of
+these names is permitted only to describe the origin of the Work and to
+reproduce the content of this NOTICE file.
 
 Third-party dependencies
 ------------------------
