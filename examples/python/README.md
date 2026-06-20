@@ -110,7 +110,7 @@ After a short warmup, the app prints a live status panel:
 ║  ATTENTION LABS :: CONVERSATION INTELLIGENCE v1.0                            ║
 ║  Press Ctrl+C to stop                                                        ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  CURRENT MODE : TALKING TO COMPUTER (88.80%)                                 ║
+║  CURRENT MODE : TALKING TO COMPUTER (94%)                                 ║
 ║  BUFFER       : [0, 0, 0, 2, 2, 2, 2, 2, 2, 2]                               ║
 ║  LLM STATE    : listening                                                    ║
 ║  PROCESSING   : 16.2s                                                        ║

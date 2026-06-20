@@ -30,6 +30,8 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://attentionlabs.ai"
+Source = "https://github.com/attenlabs/saa-sdk"
+Issues = "https://github.com/attenlabs/saa-sdk/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/saa"]

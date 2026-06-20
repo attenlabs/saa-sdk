@@ -22,6 +22,8 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://attentionlabs.ai"
+Source = "https://github.com/attenlabs/saa-sdk"
+Issues = "https://github.com/attenlabs/saa-sdk/issues"
 Documentation = "https://attentionlabs.ai/docs/integrations/livekit"
 
 [tool.setuptools]
