@@ -7,7 +7,7 @@ name = "attenlabs-saa-demo"
 version = "0.1.0"
 description = "CLI demo for attenlabs-saa: streams microphone and webcam to Attention Labs and routes detected speech through OpenAI Realtime."
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
 requires-python = ">=3.10"
 dependencies = [
     "attenlabs-saa>=0.6.0",

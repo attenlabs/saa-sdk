@@ -64,4 +64,4 @@ This demo accepts the OpenAI API key in the browser (typed into the UI or passed
 
 ## License
 
-MIT
+Apache-2.0

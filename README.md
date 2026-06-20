@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/@attenlabs/saa-js"><img alt="npm" src="https://img.shields.io/npm/v/@attenlabs/saa-js?label=npm&color=D9FF00&labelColor=060d0f&style=for-the-badge"></a>
   <a href="https://pypi.org/project/attenlabs-saa/"><img alt="PyPI" src="https://img.shields.io/pypi/v/attenlabs-saa?label=pypi&color=D9FF00&labelColor=060d0f&style=for-the-badge"></a>
-  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-D9FF00?labelColor=060d0f&style=for-the-badge"></a>
+  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-D9FF00?labelColor=060d0f&style=for-the-badge"></a>
 </p>
 
 <p align="center">Drop-in for the voice-agent stack you already use:</p>
@@ -184,7 +184,7 @@ The open SDKs stream to the SAA cloud. For deployments where audio must stay on 
 
 ## License
 
-MIT across the repo, each package and the examples ship under it (see each subtree's `LICENSE`). The hosted cloud service is governed by the Attention Labs Terms of Service.
+Apache-2.0 across the repo, each package and the examples ship under it (see each subtree's `LICENSE`). The hosted cloud service is governed by the Attention Labs Terms of Service.
 
 [`SECURITY.md`](./SECURITY.md) · [`CONTRIBUTING.md`](./CONTRIBUTING.md) · [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) · [`CHANGELOG.md`](./CHANGELOG.md) · [`NOTICE`](./NOTICE) · [`CITATION.cff`](./CITATION.cff)
 

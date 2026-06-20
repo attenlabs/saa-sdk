@@ -154,4 +154,4 @@ so they never leak to other room participants.
 
 ## License
 
-MIT. © Attention Labs.
+Apache-2.0. © Attention Labs.

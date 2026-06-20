@@ -7,14 +7,14 @@ name = "attenlabs-saa"
 version = "0.6.1"
 description = "Python SDK for SAA, Attention Labs' device-directed speech detection."
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 authors = [
     { name = "Attention Labs" },
 ]
 keywords = ["attention", "saa", "audio", "video", "vad", "realtime", "websocket"]
 classifiers = [
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",

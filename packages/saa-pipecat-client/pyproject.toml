@@ -7,7 +7,7 @@ name = "saa-pipecat-client"
 version = "0.3.1"
 description = "Pipecat / Daily client for saa: consume attention events inside your voice agent."
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 authors = [
     { name = "Attention Labs" },
 ]

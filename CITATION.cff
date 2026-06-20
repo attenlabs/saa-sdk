@@ -9,7 +9,7 @@ authors:
     website: "https://attentionlabs.ai"
 url: "https://attentionlabs.ai"
 repository-code: "https://github.com/attenlabs/saa"
-license: MIT
+license: Apache-2.0
 keywords:
   - selective-auditory-attention
   - addressee-detection

@@ -13,12 +13,10 @@ Published registries:
 
 ### `@attenlabs/saa-js` 0.6.1 · `attenlabs-saa` 0.6.1
 
-- Relicensed from Apache-2.0 to MIT.
 - Documentation and copy cleanup: clearer package descriptions, removed internal-tooling and integration jargon, and corrected the documented `jpegQuality` / `jpeg_quality` defaults (0.5 / 50). No API changes.
 
 ### `saa-livekit-client` 0.3.1 · `saa-pipecat-client` 0.3.1
 
-- Relicensed from Apache-2.0 to MIT.
 - Documentation and copy cleanup: clearer package descriptions, removed internal-tooling and integration jargon, and dropped the cascaded sample in favor of the realtime and web samples. No API changes.
 
 ### `@attenlabs/saa-js` 0.6.0

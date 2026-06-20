@@ -179,4 +179,4 @@ This demo reads the OpenAI API key from a CLI arg or env var and uses it directl
 
 ## License
 
-MIT
+Apache-2.0

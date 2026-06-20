@@ -44,4 +44,4 @@ This repository follows the [Contributor Covenant Code of Conduct](./CODE_OF_CON
 
 ## License
 
-MIT across the repo. By contributing, you agree that your contributions are licensed under MIT. Each package's `LICENSE` file is authoritative for that subtree; the root [`LICENSE`](./LICENSE) is the MIT text.
+Apache-2.0 across the repo. By contributing, you agree that your contributions are licensed under Apache-2.0. Each package's `LICENSE` file is authoritative for that subtree; the root [`LICENSE`](./LICENSE) is the Apache-2.0 text.
