@@ -50,7 +50,7 @@ Example: `/?token=al_live_…&openai_key=sk-…`
 
 ## How it works
 
-1. [`app.js`](app.js) constructs an `AttentionClient` from [`saa-js`](https://www.npmjs.com/package/saa-js), which acquires the mic + webcam and opens a WebSocket to the SAA server.
+1. [`app.js`](app.js) constructs an `AttentionClient` from [`@attenlabs/saa-js`](https://www.npmjs.com/package/@attenlabs/saa-js), which acquires the mic + webcam and opens a WebSocket to the SAA server.
 2. The SDK emits typed events, `prediction`, `vad`, `state`, `turnReady`, `warmupComplete`.  `app.js` renders into the UI.
 3. On `turnReady`, `app.js` hands the PCM16 audio (and any attached JPEG frames) to [`llm.js`](llm.js), a small OpenAI Realtime bridge that wraps them into `input_audio` / `input_image` content parts and plays the response back through WebAudio.
 4. While the LLM is speaking, `app.js` calls `client.mute()` + `client.markResponding(true)` so the server stops emitting predictions until playback ends.

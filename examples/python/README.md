@@ -167,7 +167,7 @@ Lower the threshold for more sensitive triggering; raise it for fewer false star
 
 ## SDK docs
 
-Full API reference, constructor, methods, events, types, threading model, lives in [**DOCS.md**](DOCS.md).
+Full API reference, constructor, methods, events, types, threading model, lives in the [Python SDK reference](https://attentionlabs.ai/docs/python/reference/).
 
 ---
 

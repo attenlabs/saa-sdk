@@ -55,10 +55,10 @@ newest Python and otherwise compiles from source against PortAudio.
 
 ```python
 saa = AttentionClient(token=SAA_API_KEY, enable_audio=False, enable_video=False)
-attn = SAAFeedAudioInterface(DefaultAudioInterface(), saa, gate=True)   # tee + feed_audio + gate
+attn = SAAFeedAudioInterface(DefaultAudioInterface(), saa)   # tee + feed_audio + gate
 
 @saa.on_prediction
-def _(ev): attn.set_gate_open(ev.cls == 2)     # only device-directed audio reaches the agent
+def _(ev): attn.update_gate(ev.cls)            # only device-directed audio reaches the agent
 
 conversation = Conversation(..., audio_interface=attn)
 saa.start(); conversation.start_session()
