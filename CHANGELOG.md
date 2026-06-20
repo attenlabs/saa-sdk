@@ -11,6 +11,16 @@ Published registries:
 
 ## 2026-06-19
 
+### `@attenlabs/saa-js` 0.6.1 · `attenlabs-saa` 0.6.1
+
+- Relicensed from Apache-2.0 to MIT.
+- Documentation and copy cleanup: clearer package descriptions, removed internal-tooling and integration jargon, and corrected the documented `jpegQuality` / `jpeg_quality` defaults (0.5 / 50). No API changes.
+
+### `saa-livekit-client` 0.3.1 · `saa-pipecat-client` 0.3.1
+
+- Relicensed from Apache-2.0 to MIT.
+- Documentation and copy cleanup: clearer package descriptions, removed internal-tooling and integration jargon, and dropped the cascaded sample in favor of the realtime and web samples. No API changes.
+
 ### `@attenlabs/saa-js` 0.6.0
 
 - Native warmup signal: `warmupComplete` fires on the server's dedicated `warmup_complete` message, sent once the model is warmed up and producing real predictions (replacing the old heuristic of inferring readiness from the first non-zero-confidence prediction).
