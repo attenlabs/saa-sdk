@@ -1,6 +1,6 @@
 # SAA + LiveKit Agents
 
-Reference samples that add **Attention Labs SAA** addressee gating to LiveKit voice agents. SAA decides, per utterance, whether speech in the room was meant for the agent or not.
+Reference samples that add **attention labs SAA** addressee gating to LiveKit voice agents. SAA decides, per utterance, whether speech in the room was meant for the agent or not.
 
 ## How SAA integrates
 

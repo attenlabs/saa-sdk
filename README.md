@@ -1,5 +1,8 @@
 <p align="center">
-  <img alt="SAA: Selective Auditory Attention" src="./assets/saa-hero-light.svg" width="408">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./assets/saa-hero-dark.svg">
+    <img alt="SAA: Selective Auditory Attention" src="./assets/saa-hero-light.svg" width="408">
+  </picture>
 </p>
 
 <h3 align="center">Tells your voice agent which speech is actually for it.</h3>
@@ -164,7 +167,7 @@ The streaming SDKs expose `markResponding(true)` / `mark_responding(True)` so th
 
 ## How it composes
 
-SAA is the model-agnostic addressee decision between your VAD and STT. It answers a different question than VAD (is anyone speaking), turn detection (have they finished), or a wake word (did they say the phrase), so it composes with those layers and can replace the wake word outright.
+SAA is the model-agnostic addressee decision between your VAD and STT. It answers a different question than VAD (is anyone speaking), speaker diarization (which voice it is), turn detection (have they finished), or a wake word (did they say the phrase), so it composes with those layers and can replace the wake word outright.
 
 <p align="center">
   <img alt="Where SAA sits in your voice stack: noise suppression and VAD upstream, SAA addressee gate, then STT → LLM → TTS downstream" src="./assets/diagrams/where-saa-sits-dark.svg" width="820">
