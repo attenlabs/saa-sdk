@@ -50,13 +50,22 @@ ElevenLabs runs its agent inside its own sealed WebRTC room, so this sample uses
 
 Needs **attenlabs-saa >= 0.6.0** and **elevenlabs >= 2.45**.
 
+## Twilio Media Streams
+
+Phone calls over the PSTN — inbound or outbound — gated by SAA before any audio reaches STT or LLM. The adapter in [`twilio/media_streams/server.py`](./twilio/media_streams/server.py) transcodes μ-law 8 kHz Twilio frames to PCM16 16 kHz and feeds them to SAA via `feed_audio`. Only device-directed caller speech reaches the bridge; side talk and the agent's own TTS echo are filtered out. Three bridge options ship out of the box: `LoggingBridge` (no keys, good for smoke-testing), `OpenAIRealtimeBridge`, and `DeepgramOpenAIElevenLabsBridge`.
+
+| Sample | What it shows | Run |
+|---|---|---|
+| [`twilio/media_streams/`](./twilio/media_streams) | SAA-gated Twilio Media Streams adapter with μ-law ↔ PCM16 codec, paced outbound TTS sender, barge-in, and three reference bridges. | `python -m uvicorn server:app --port 8765` |
+
+Needs **attenlabs-saa >= 0.6.1**, **fastapi**, **uvicorn**, **numpy**, and **twilio**. See [`twilio/README.md`](./twilio/README.md) for the full walk-through and limitations.
+
 ## Roadmap
 
-`attenlabs-saa` ships `feed_audio` (external-frame ingestion), so any stack that already captures audio can be gated by feeding SAA
+`attenlabs-saa` ships `feed_audio` (external-frame ingestion), so any stack that already captures audio can be gated by feeding SAA.
 
 | Stack | Shape |
 |---|---|
-| Twilio Media Streams | μ-law 8 kHz → PCM16 telephony bridge (`feed_audio(..., sample_rate=8000)`) |
 | Proactive-agent overlays | per-stack `mark_responding` lifecycle recipes |
 
 ## Conventions

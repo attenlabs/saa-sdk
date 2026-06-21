@@ -1,0 +1,11 @@
+# SAA x Twilio Media Streams adapter
+# The SAA SDK: install the published package, OR `pip install -e ../../../packages/saa-py` from this repo.
+# attenlabs-saa>=0.6.1,<0.7   # uncomment once you are not installing the local package
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.30,<1.0
+numpy>=1.24
+twilio>=9.0,<10.0
+python-dotenv>=1.0.0
+
+# OpenAIRealtimeBridge: pip install 'websockets>=12' 'openai>=1.0'
+# DeepgramOpenAIElevenLabsBridge: pip install 'openai>=1.0' 'deepgram-sdk>=3' 'elevenlabs>=1.0'

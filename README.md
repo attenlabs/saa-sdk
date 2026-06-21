@@ -19,6 +19,8 @@
   <a href="./examples/livekit/"><img alt="LiveKit" src="./assets/brands/livekit.svg" height="28"></a>
   &nbsp;&nbsp;
   <a href="./examples/elevenlabs/"><img alt="ElevenLabs Conversational AI" src="./assets/brands/elevenlabs.svg" height="28"></a>
+  &nbsp;&nbsp;
+  <a href="./examples/twilio/"><img alt="Twilio Media Streams" src="./assets/brands/twilio.svg" height="28"></a>
 </p>
 
 ## What is SAA?
@@ -60,8 +62,7 @@ A voice agent's microphone hears every voice in the room: yours, a coworker's, t
 | **LiveKit** | [`saa-livekit-client`](./packages/saa-livekit-client) | you run a [LiveKit Agents](https://docs.livekit.io/agents/) voice agent. SAA joins your room and gates the session. |
 | **Pipecat (Daily)** | [`saa-pipecat-client`](./packages/saa-pipecat-client) | you run a [Pipecat](https://github.com/pipecat-ai/pipecat) voice agent on Daily. SAA joins your Daily room and gates the pipeline through the `"saa"` app-message topic. |
 | **ElevenLabs** | [`attenlabs-saa`](./packages/saa-py) | you run an [ElevenLabs Conversational AI](./examples/elevenlabs) agent. SAA gates it via the streaming SDK's `feed_audio` (its room is sealed, so SAA can't join it directly). |
-
-Twilio is on the [roadmap](#roadmap).
+| **Twilio** | [`attenlabs-saa`](./packages/saa-py) | you run a [Twilio Media Streams](https://www.twilio.com/docs/voice/media-streams) telephony agent. SAA gates inbound/outbound call audio (μ-law 8 kHz resampled to PCM16) via the streaming SDK's `feed_audio`. |
 
 ## Install
 
@@ -171,16 +172,13 @@ SAA is the addressee decision that sits between your VAD and STT. It can complem
 
 The open SDKs stream to the SAA cloud. For deployments where audio must stay on the device (telephony, embedded systems, wearables, robotics, kiosks) direct on-device licensing is available. Contact us via [this link](https://attentionlabs.ai/#contact).
 
-## Roadmap
-
-- **Twilio Media Streams**: a telephony bridge that gates inbound call audio (μ-law 8 kHz to PCM16) by feeding it to SAA with `feed_audio(..., sample_rate=8000)`.
-
 ## Documentation
 
 - [`packages/saa-js/README.md`](./packages/saa-js/README.md), [`packages/saa-py/README.md`](./packages/saa-py/README.md), streaming SDK reference.
 - [`packages/saa-livekit-client/README.md`](./packages/saa-livekit-client/README.md): the LiveKit client.
 - [`packages/saa-pipecat-client/README.md`](./packages/saa-pipecat-client/README.md): the Pipecat-on-Daily client.
 - [`examples/README.md`](./examples/README.md), runnable examples.
+- [`examples/twilio/README.md`](./examples/twilio/README.md): the Twilio Media Streams bridge.
 
 ## License
 
