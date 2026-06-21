@@ -1,6 +1,6 @@
 # saa-livekit-client
 
-LiveKit client for the [saa](https://attentionlabs.ai).
+LiveKit client for the [SAA](https://attentionlabs.ai).
 
 Adds attention-aware gating, barge-in, and proactive interjection to any LiveKit voice agent.
 
