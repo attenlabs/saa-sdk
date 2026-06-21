@@ -44,7 +44,7 @@ A voice agent's microphone hears every voice in the room: yours, a coworker's, t
     <tr>
       <td align="center"><sub>Only addressed speech wakes the robot.</sub></td>
       <td align="center"><sub>Pill flips green only when the user addresses the screen.</sub></td>
-      <td align="center"><sub>Same room, same audio &mdash; only the addressed robot acts.</sub></td>
+      <td align="center"><sub>Same room, same audio. Only the addressed robot acts.</sub></td>
     </tr>
   </tbody>
 </table>
@@ -52,7 +52,9 @@ A voice agent's microphone hears every voice in the room: yours, a coworker's, t
 **SAA** (Selective Auditory Attention) is a hosted classifier that runs **before STT** and decides, per utterance, whether the speech was directed at the device. Side talk, background media, and the agent's own playback are filtered out, so your STT / LLM / TTS only see audio meant for the agent.
 
 - **No wake word.** SAA decides per-utterance from the audio (and optionally low-rate video) stream.
-- **Hosted.** A WebSocket to Attention Labs' cloud; the open SDKs are thin clients. On-device deployment is a separate enterprise licence.
+- **Hosted.** A real-time WebSocket to attention labs' cloud; the open SDKs are thin clients. Because it gates before STT, only addressed speech reaches the STT, LLM, and TTS you already run, so your downstream services and logs see less audio, not more. On-device deployment is a separate enterprise licence.
+
+The architecture and evaluation are described in the [technical report](https://arxiv.org/abs/2604.08412).
 
 ## Ways to integrate
 
@@ -162,7 +164,7 @@ The streaming SDKs expose `markResponding(true)` / `mark_responding(True)` so th
 
 ## How it composes
 
-SAA is the model-agnostic addressee decision that sits between your VAD and STT. It can complement your wakeword system or replace it.
+SAA is the model-agnostic addressee decision between your VAD and STT. It answers a different question than VAD (is anyone speaking), turn detection (have they finished), or a wake word (did they say the phrase), so it composes with those layers and can replace the wake word outright.
 
 <p align="center">
   <img alt="Where SAA sits in your voice stack: noise suppression and VAD upstream, SAA addressee gate, then STT → LLM → TTS downstream" src="./assets/diagrams/where-saa-sits-dark.svg" width="820">
@@ -182,12 +184,12 @@ The open SDKs stream to the SAA cloud. For deployments where audio must stay on 
 
 ## License
 
-Apache-2.0 across the repo, each package and the examples ship under it (see each subtree's `LICENSE`). The hosted cloud service is governed by the Attention Labs Terms of Service.
+Apache-2.0 across the repo, each package and the examples ship under it (see each subtree's `LICENSE`). The hosted cloud service is governed by the attention labs Terms of Service.
 
 [`SECURITY.md`](./SECURITY.md) · [`CONTRIBUTING.md`](./CONTRIBUTING.md) · [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) · [`CHANGELOG.md`](./CHANGELOG.md) · [`NOTICE`](./NOTICE) · [`CITATION.cff`](./CITATION.cff)
 
 ---
 
 <p align="center">
-  <sub>An Attention Labs project. © 2026.</sub>
+  <sub>An attention labs project. © 2026.</sub>
 </p>
