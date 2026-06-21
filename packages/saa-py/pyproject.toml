@@ -32,6 +32,8 @@ dependencies = [
 Homepage = "https://attentionlabs.ai"
 Source = "https://github.com/attenlabs/saa-sdk"
 Issues = "https://github.com/attenlabs/saa-sdk/issues"
+Documentation = "https://github.com/attenlabs/saa-sdk/tree/main/packages/saa-py"
+Changelog = "https://github.com/attenlabs/saa-sdk/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/saa"]

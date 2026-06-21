@@ -13,6 +13,13 @@ authors = [
 ]
 readme = "README.md"
 keywords = ["pipecat", "daily", "voice-agent", "attention", "vad", "turn-detection"]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "pipecat-ai[daily]>=1.0.0,<2",
     "daily-python>=0.19.0,<1",

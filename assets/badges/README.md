@@ -8,18 +8,18 @@
 
 A small SVG shield for projects that integrate SAA. No opt-in, no
 trademark policy. Link the badge to
-<https://github.com/attenlabs/saa> or the relevant package.
+<https://github.com/attenlabs/saa-sdk> or the relevant package.
 
 ## Embed
 
 ```md
-[![Built with SAA](https://attenlabs.github.io/saa/badges/built-with-saa.svg)](https://github.com/attenlabs/saa)
+[![Built with SAA](https://raw.githubusercontent.com/attenlabs/saa-sdk/main/assets/badges/built-with-saa.svg)](https://github.com/attenlabs/saa-sdk)
 ```
 
 ```html
-<a href="https://github.com/attenlabs/saa">
+<a href="https://github.com/attenlabs/saa-sdk">
   <img alt="Built with SAA"
-       src="https://attenlabs.github.io/saa/badges/built-with-saa.svg" height="20">
+       src="https://raw.githubusercontent.com/attenlabs/saa-sdk/main/assets/badges/built-with-saa.svg" height="20">
 </a>
 ```
 

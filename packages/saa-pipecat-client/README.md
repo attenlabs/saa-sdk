@@ -1,6 +1,6 @@
 # saa-pipecat-client
 
-Pipecat / Daily client for [saa](https://attentionlabs.ai).
+Pipecat / Daily client for [SAA](https://attentionlabs.ai).
 
 Adds attention-aware gating, barge-in, and proactive interjection to any
 Pipecat voice agent running on Daily, including bots deployed to

@@ -39,6 +39,7 @@
   "license": "Apache-2.0",
   "repository": { "type": "git", "url": "git+https://github.com/attenlabs/saa-sdk.git", "directory": "packages/saa-js" },
   "bugs": { "url": "https://github.com/attenlabs/saa-sdk/issues" },
+  "changelog": "https://github.com/attenlabs/saa-sdk/blob/main/CHANGELOG.md",
   "devDependencies": {
     "typescript": "^5.4.0"
   }

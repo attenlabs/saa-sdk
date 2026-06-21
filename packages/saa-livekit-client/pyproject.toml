@@ -13,6 +13,14 @@ authors = [
 ]
 readme = "README.md"
 keywords = ["livekit", "voice-agent", "attention", "vad", "turn-detection"]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "livekit>=1.0",
     "livekit-api>=1.0",
