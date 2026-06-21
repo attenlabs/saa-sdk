@@ -1,6 +1,6 @@
 # voice_agent_realtime: SAA-gated realtime LiveKit agent
 
-A speech-to-speech voice agent (OpenAI Realtime) with **Attention Labs SAA** wired on top, built for **LiveKit Agents 1.5.x**.
+A speech-to-speech voice agent (OpenAI Realtime) with **attention labs SAA** wired on top, built for **LiveKit Agents 1.5.x**.
 
 ## Why this one matters
 

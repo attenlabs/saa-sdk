@@ -1,6 +1,6 @@
 # Contributing
 
-SAA is an open repository for the Attention Labs SAA SDKs and framework adapters. Contributions of any size are welcome, bug reports, doc fixes, new framework adapters, performance improvements.
+SAA is an open repository for the attention labs SAA SDKs and framework adapters. Contributions of any size are welcome, bug reports, doc fixes, new framework adapters, performance improvements.
 
 ## Before you open a PR
 

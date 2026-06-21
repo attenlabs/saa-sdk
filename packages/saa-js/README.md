@@ -1,6 +1,6 @@
 # @attenlabs/saa-js
 
-JavaScript SDK for [Attention Labs](https://attentionlabs.ai) real-time attention detection.
+JavaScript SDK for [attention labs](https://attentionlabs.ai) real-time attention detection.
 
 ## Sign up
 

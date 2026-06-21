@@ -164,7 +164,7 @@ The streaming SDKs expose `markResponding(true)` / `mark_responding(True)` so th
 
 ## How it composes
 
-SAA is the model-agnostic addressee decision between your VAD and STT. It answers a different question than VAD (is anyone speaking), turn detection (have they finished), or a wake word (did they say the phrase), so it composes with those layers and can replace the wake word outright.
+SAA is the model-agnostic addressee decision between your VAD and STT. It answers a different question than VAD (is anyone speaking), speaker diarization (which voice it is), turn detection (have they finished), or a wake word (did they say the phrase), so it composes with those layers and can replace the wake word outright.
 
 <p align="center">
   <img alt="Where SAA sits in your voice stack: noise suppression and VAD upstream, SAA addressee gate, then STT → LLM → TTS downstream" src="./assets/diagrams/where-saa-sits-dark.svg" width="820">
