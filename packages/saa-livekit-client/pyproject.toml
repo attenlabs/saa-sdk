@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "saa-livekit-client"
 version = "0.3.1"
-description = "LiveKit client for saa: consume attention events inside your voice agent."
+description = "LiveKit Agents client for SAA, the addressee layer for voice agents — gates your LiveKit voice agent to respond only to speech directed at it."
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 authors = [
     { name = "Attention Labs" },
 ]
 readme = "README.md"
-keywords = ["livekit", "voice-agent", "attention", "vad", "turn-detection"]
+keywords = ["livekit","livekit-agents","voice-agents","voice-ai","addressee-detection","device-directed-speech","turn-detection","vad","conversational-ai","selective-auditory-attention","real-time"]
 classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",

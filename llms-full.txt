@@ -1,0 +1,124 @@
+# SAA — Selective Auditory Attention (full context)
+
+> SAA is the addressee layer for voice agents: one decision per utterance about whether speech was meant for your agent, before STT, LLM, or TTS. No wake word, model-agnostic, drop-in for the voice stack you already use. The hosted classifier runs server-side; the SDKs are thin, open-source (Apache-2.0) clients published on npm and PyPI.
+
+## What it does
+
+A voice agent's microphone hears every voice in the room: yours, a coworker's, the kids, a podcast playing on the laptop, the agent's own TTS bleeding back through the speakers. Most pipelines respond to any of it, paying STT for every transcribed second and triggering the LLM on speech that was never directed at the device.
+
+SAA (Selective Auditory Attention) is a hosted classifier that runs before STT and decides, per utterance, whether the speech was directed at the device. Side talk, background media, and the agent's own playback are filtered out, so your STT / LLM / TTS only see audio meant for the agent.
+
+- No wake word. SAA decides per-utterance from the audio (and optionally low-rate video) stream.
+- Hosted. A WebSocket to Attention Labs' cloud; the open SDKs are thin clients. On-device deployment is a separate enterprise licence.
+
+SAA is the model-agnostic addressee decision that sits between your VAD and STT. It can complement your wakeword system or replace it.
+
+## Install
+
+```bash
+npm install @attenlabs/saa-js     # JavaScript / browser
+pip install attenlabs-saa          # Python (streaming SDK)
+pip install saa-livekit-client     # Python (LiveKit)
+pip install saa-pipecat-client     # Python (Pipecat on Daily)
+```
+
+Get an API key at https://attentionlabs.ai.
+
+## Quickstart
+
+JavaScript:
+
+```js
+import { AttentionClient } from "@attenlabs/saa-js";
+
+const client = new AttentionClient({ token: process.env.SAA_API_KEY });
+
+// fires once per device-directed turn; turn.audioBase64 is PCM16 @ 16 kHz
+client.on("turnReady", (turn) => yourSTT.send(turn.audioBase64));
+
+await client.start({ videoElement: document.querySelector("video") });
+```
+
+Python:
+
+```python
+import os
+from saa import AttentionClient
+
+client = AttentionClient(token=os.environ["SAA_API_KEY"])
+
+@client.on_turn_ready
+def _(turn):
+    # turn.audio_base64, PCM16 @ 16 kHz mono; turn.audio_pcm16, np.int16 array
+    your_stt.send(turn.audio_base64)
+
+client.start()
+```
+
+For audio-only deployments, omit `videoElement` (browser) or pass `enable_video=False` (Python).
+
+## Events and methods
+
+The key event is `turnReady` (JS) / `turn_ready` (Python) — one device-directed utterance delivered as PCM16 @ 16 kHz. In JS the payload is `turn.audioBase64` (base64 string) and `turn.audioPcm16` (ArrayBuffer). In Python the payload is `turn.audio_base64` (base64 string) and `turn.audio_pcm16` (np.int16 array).
+
+Both SDKs also emit:
+
+- `prediction` — per-frame attention prediction with `cls` (0=silent, 1=human-directed, 2=device-directed), `confidence`, `source`, `numFaces`/`num_faces`, `responding`
+- `vad` — voice activity: `probability`, `isSpeech`/`is_speech`
+- `state` — conversation state: one of `listening`, `sending`, `cancelled`, `idle`
+- `interrupt` — user barging in during AI playback; `fadeMs`/`fade_ms`, `confidence`
+- `config` — server acks a threshold change; `modelClass2Threshold`/`model_class2_threshold`
+- `stats` — connection health every ~10s; `rttMs`/`rtt_ms`, `sentAudio`/`sent_audio`, `uptimeMs`/`uptime_s`
+
+Methods:
+
+- `mute()` / `unmute()` — pause or resume upstream audio
+- `setThreshold(value)` / `set_threshold(value)` — update device-class confidence threshold (0–1)
+- `markResponding(bool)` / `mark_responding(bool)` — signal that your app is responding; suppresses predictions during AI playback
+
+For audio-only deployments: omit `videoElement` in the JS `start()` call, or pass `enable_video=False` to the Python `AttentionClient`.
+
+## How it composes
+
+SAA is the addressee decision between your VAD and STT; it is not a VAD, wake word, or end-of-turn detector.
+
+## Packages
+
+- **@attenlabs/saa-js** — JavaScript / browser SDK (npm)
+  Install: `npm install @attenlabs/saa-js`
+  Your app captures mic and optional camera; SAA emits typed attention events to gate your STT/LLM/TTS pipeline.
+  → [packages/saa-js](./packages/saa-js)
+
+- **attenlabs-saa** — Python streaming SDK (PyPI)
+  Install: `pip install attenlabs-saa`
+  Same streaming model as saa-js but for Python. Captures mic and webcam via sounddevice and opencv-python; also accepts externally-fed audio via `feed_audio()` for ElevenLabs, Twilio, and similar stacks.
+  → [packages/saa-py](./packages/saa-py)
+
+- **saa-livekit-client** — LiveKit Agents integration (PyPI)
+  Install: `pip install saa-livekit-client`
+  Summons the SAA hosted agent into your LiveKit room; your agent consumes `AttentionEngine` events and gates the session.
+  → [packages/saa-livekit-client](./packages/saa-livekit-client)
+
+- **saa-pipecat-client** — Pipecat / Daily integration (PyPI)
+  Install: `pip install saa-pipecat-client`
+  Summons the SAA hosted bot into your Daily room; your Pipecat pipeline consumes `AttentionEngine` events on Daily's app-message `"saa"` topic.
+  → [packages/saa-pipecat-client](./packages/saa-pipecat-client)
+
+## Examples
+
+- **ElevenLabs** ([examples/elevenlabs](./examples/elevenlabs)) — SAA gating an ElevenLabs Conversational AI agent so only device-directed speech reaches the model, via `attenlabs-saa`'s `feed_audio`.
+
+- **LiveKit** ([examples/livekit](./examples/livekit)) — SAA gates an OpenAI Realtime speech-to-speech agent in a LiveKit room, with barge-in and proactive interjection. Includes a vanilla-JS web client.
+
+- **Pipecat on Daily** ([examples/pipecat](./examples/pipecat)) — SAA joins the Daily room and gates the Pipecat pipeline; includes a vanilla-JS browser client.
+
+- **Python** ([examples/python](./examples/python)) — `attenlabs-saa` in a terminal: live attention predictions, VAD, and conversation state in an ASCII status panel; turns routed to OpenAI Realtime.
+
+- **Twilio Media Streams** ([examples/twilio](./examples/twilio)) — SAA-gated Twilio Media Streams adapter with μ-law ↔ PCM16 codec transcoding, paced outbound TTS sender, barge-in, and three reference bridge implementations.
+
+- **Web** ([examples/web](./examples/web)) — `@attenlabs/saa-js` in the browser: an orb UI with guided flow, turns routed to OpenAI Realtime.
+
+## Links
+
+- Docs: https://attentionlabs.ai/docs
+- Repo: https://github.com/attenlabs/saa-sdk
