@@ -1,6 +1,6 @@
 <p align="center">
   <a href="../README.md">
-    <img alt="SAA: Selective Attention" src="../assets/saa-hero-light.svg" width="326">
+    <img alt="SAA: Selective Attention" src="../assets/saa-hero.svg" width="326">
   </a>
 </p>
 

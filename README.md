@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./assets/saa-hero-dark.svg">
-    <img alt="SAA: Selective Auditory Attention" src="./assets/saa-hero-light.svg" width="408">
-  </picture>
+  <img alt="SAA: Selective Auditory Attention" src="./assets/saa-hero.svg" width="408">
 </p>
 
 <h3 align="center">Tells your voice agent which speech is actually for it.</h3>
