@@ -3,23 +3,24 @@ Copyright 2026 Attention Labs Incorporated
 
 This product includes software developed by Attention Labs Incorporated
 (https://attentionlabs.ai/), a Delaware corporation and wholly-owned subsidiary
-of Socero Inc. (Canada).
+of Socero Inc.
 
-Licensed under the MIT License. The full license text is in the LICENSE file
+Licensed under the Apache License, Version 2.0. The full license text is in the LICENSE file
 at the root of this distribution.
 
 Patent notice
 -------------
 Portions of this software may practice methods covered by patents or pending
-patent applications associated with Attention Labs Incorporated. The MIT
-License grants no patent rights. The status and scope of any granted or pending
+patent applications associated with Attention Labs Incorporated. The Apache License, Version 2.0
+includes a limited patent grant (Section 3); it conveys no rights to other
+patents or pending applications. The status and scope of any granted or pending
 applications are not enumerated in this NOTICE. Commercial patent licensing is
 handled separately; contact legal@attentionlabs.ai for licensing inquiries.
 
 Trademarks
 ----------
 "Attention Labs", "SAA", and "Selective Auditory Attention" are trademarks of
-Attention Labs Incorporated. The MIT License grants no trademark rights. Use of
+Attention Labs Incorporated. The Apache License, Version 2.0 grants no trademark rights. Use of
 these names is permitted only to describe the origin of the Work and to
 reproduce the content of this NOTICE file.
 

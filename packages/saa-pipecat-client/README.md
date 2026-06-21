@@ -196,4 +196,4 @@ and Pipecat Cloud. No extra deployment knobs.
 
 ## License
 
-MIT. © Attention Labs.
+Apache-2.0. © Attention Labs.

@@ -116,4 +116,4 @@ Mix and match: `enableVideo: false` with internal mic for audio-only, or
 
 ## License
 
-MIT
+Apache-2.0

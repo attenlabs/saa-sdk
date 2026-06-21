@@ -1,0 +1,13 @@
+Attention Labs SAA SDK
+Copyright 2026 Attention Labs, Inc.
+
+This product includes software developed at Attention Labs (https://attentionlabs.ai).
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+these files except in compliance with the License. A copy of the License is in
+the LICENSE file at the root of this repository, or at
+http://www.apache.org/licenses/LICENSE-2.0
+
+The hosted SAA inference service is a proprietary cloud service operated by
+Attention Labs and governed by the Attention Labs Terms of Service, not by this
+Apache-2.0 license. This repository licenses the open client SDKs and examples only.

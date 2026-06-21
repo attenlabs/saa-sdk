@@ -60,7 +60,7 @@ Talk to it. The agent answers only when you're addressing it; speech you direct 
 The agent logs one line per SAA prediction so the gating is observable:
 
 ```
-PRED cls=2 conf=0.93 src=model | resp=False gate=open send=real
+PRED cls=2 conf=0.94 src=model | resp=False gate=open send=real
 ```
 
 `cls` is the prediction (0 silent / 1 human-directed / 2 device-directed), `gate` the debounced

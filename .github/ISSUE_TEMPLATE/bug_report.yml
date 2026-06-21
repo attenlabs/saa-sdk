@@ -1,0 +1,53 @@
+name: Bug report
+description: Something in the SAA SDK isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "For security issues do not file here — see SECURITY.md."
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      options:
+        - "@attenlabs/saa-js"
+        - "attenlabs-saa (Python)"
+        - "saa-livekit-client"
+        - "saa-pipecat-client"
+        - "examples"
+        - "not sure"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: "e.g. 0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you expected vs what actually happened.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Node/Python version, browser if relevant.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / errors
+      render: shell

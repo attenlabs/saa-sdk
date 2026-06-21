@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & discussions
+    url: https://github.com/attenlabs/saa-sdk/discussions
+    about: Ask how-to questions and share what you're building.
+  - name: Docs & API keys
+    url: https://attentionlabs.ai
+    about: Guides, reference, and free API keys.
+  - name: Report a security issue
+    url: https://github.com/attenlabs/saa-sdk/security/policy
+    about: Report a vulnerability privately (do not open a public issue).
+  - name: Commercial / on-device licensing
+    url: https://attentionlabs.ai/#contact
+    about: Billing and embedding / on-device licenses.
