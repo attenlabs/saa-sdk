@@ -237,6 +237,7 @@ class AttentionEngine:
             return
 
         evt_type = envelope.get("type")
+        logger.debug("recv %s %s", evt_type, {k: v for k, v in envelope.items() if k != "type"})
         if evt_type == "prediction":
             self._dispatch_prediction(envelope)
         elif evt_type == "vad":
