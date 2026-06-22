@@ -116,6 +116,8 @@ For audio-only deployments, omit `videoElement` (browser) or pass `enable_video=
 
 Both SDKs also emit `prediction`, `vad`, `state`, `interrupt`, `config`, and `stats` events, and expose `mute()` / `unmute()`, `setThreshold()` / `set_threshold()`, and `markResponding()` / `mark_responding()`. See [`packages/saa-js`](./packages/saa-js) and [`packages/saa-py`](./packages/saa-py).
 
+Runnable end-to-end demos are in [`examples/web/`](./examples/web) (browser) and [`examples/python/`](./examples/python) (terminal).
+
 ## LiveKit
 
 For [LiveKit Agents](https://docs.livekit.io/agents/), `saa-livekit-client` brings SAA into your room to run the classifier and publish events on the `"saa"` data topic. Your agent consumes them through `AttentionEngine` and gates the session.
@@ -162,6 +164,47 @@ await engine.start()
 ```
 
 A runnable web-client sample is in [`examples/pipecat/`](./examples/pipecat).
+
+## ElevenLabs
+
+[ElevenLabs Conversational AI](https://elevenlabs.io/docs/eleven-agents/overview) runs its agent in a sealed WebRTC room, so SAA can't join it directly. Instead the streaming SDK runs in feed mode: you hand it the agent's microphone audio through `feed_audio` and gate the agent on SAA's `prediction` events.
+
+```python
+from saa import AttentionClient
+
+# feed mode: the SDK captures nothing itself; you supply the audio
+saa = AttentionClient(token=SAA_API_KEY, enable_audio=False, enable_video=False)
+
+@saa.on_prediction
+def _(p):
+    mic_to_agent.enabled = (p.aligned_class == 2)   # 2 = addressed to the device
+
+saa.start()
+# in ElevenLabs' AudioInterface input callback:
+saa.feed_audio(mic_pcm16)
+```
+
+A runnable sample is in [`examples/elevenlabs/`](./examples/elevenlabs).
+
+## Twilio
+
+For [Twilio Media Streams](https://www.twilio.com/docs/voice/media-streams) telephony agents, the streaming SDK runs in feed mode over the call audio. The adapter transcodes Twilio's μ-law 8 kHz frames to PCM16 16 kHz, feeds them to SAA, and forwards only device-directed turns to your bridge, so side talk, hold music, and the agent's own TTS echo are gated out.
+
+```python
+from saa import AttentionClient
+
+saa = AttentionClient(token=SAA_API_KEY, enable_audio=False, enable_video=False)
+
+@saa.on_turn_ready
+def _(turn):
+    bridge.on_speech(turn.audio_base64)   # only device-directed call audio continues
+
+saa.start()
+# in the Twilio media handler, after decoding μ-law -> PCM16:
+saa.feed_audio(pcm16_frames)
+```
+
+A runnable Media Streams bridge (codec, paced outbound, automatic `mark_responding`) is in [`examples/twilio/`](./examples/twilio).
 
 ## Proactive agents (speak first)
 

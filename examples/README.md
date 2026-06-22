@@ -6,7 +6,7 @@
 
 # Examples
 
-Runnable SAA examples. The two **streaming-SDK demos** below show the SDK driving its own capture loop end to end; the rest integrate SAA into third-party voice-agent stacks (LiveKit, Pipecat, ElevenLabs). Each consumes a public package, no example depends on a private model artifact.
+Runnable SAA examples. The two **streaming-SDK demos** below show the SDK driving its own capture loop end to end; the rest integrate SAA into third-party voice-agent stacks (LiveKit, Pipecat, ElevenLabs, Twilio). Each consumes a public package, no example depends on a private model artifact.
 
 ## Streaming SDK (start here)
 
