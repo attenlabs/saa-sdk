@@ -1,7 +1,10 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./assets/saa-hero-dark.svg">
-    <img alt="SAA: Selective Auditory Attention" src="./assets/saa-hero-light.svg" width="408">
+    <source media="(prefers-color-scheme: dark)" srcset="./assets/saa-hero-dark.svg" type="image/svg+xml">
+    <source media="(prefers-color-scheme: dark)" srcset="./assets/saa-hero-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="./assets/saa-hero-light.svg" type="image/svg+xml">
+    <source media="(prefers-color-scheme: light)" srcset="./assets/saa-hero-light.png">
+    <img alt="SAA: Selective Auditory Attention" src="./assets/saa-hero.png" width="408">
   </picture>
 </p>
 
