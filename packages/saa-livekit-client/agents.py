@@ -45,7 +45,7 @@ def inject_realtime_turn(
         rt.push_audio(rtc.AudioFrame(chunk, _SR, 1, len(chunk) // 2))
     rt.commit_audio()
     if instructions:
-        rt.generate_reply(instructions=instructions)
+        session.generate_reply(instructions=instructions)
     else:
-        rt.generate_reply()
+        session.generate_reply()
     return True
