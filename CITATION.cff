@@ -2,13 +2,13 @@ cff-version: 1.2.0
 title: "Selective Auditory Attention (SAA): SDKs and framework adapters"
 message: "If you use SAA in research or production, please cite the technical report and this repository."
 type: software
-version: 0.3.0
+version: 0.6.1
 date-released: 2026-05-14
 authors:
   - name: "Attention Labs"
     website: "https://attentionlabs.ai"
 url: "https://attentionlabs.ai"
-repository-code: "https://github.com/attenlabs/saa"
+repository-code: "https://github.com/attenlabs/saa-sdk"
 license: Apache-2.0
 keywords:
   - selective-auditory-attention

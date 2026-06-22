@@ -1,12 +1,12 @@
 <p align="center">
   <a href="../README.md">
-    <img alt="SAA: Selective Attention" src="../assets/saa-hero-light.svg" width="326">
+    <img alt="SAA: Selective Attention" src="../assets/saa-hero.png" width="326">
   </a>
 </p>
 
 # Examples
 
-Runnable SAA examples. The two **streaming-SDK demos** below show the SDK driving its own capture loop end to end; the rest integrate SAA into third-party voice-agent stacks (LiveKit, Pipecat, ElevenLabs). Each consumes a public package, no example depends on a private model artifact.
+Runnable SAA examples. The two **streaming-SDK demos** below show the SDK driving its own capture loop end to end; the rest integrate SAA into third-party voice-agent stacks (LiveKit, Pipecat, ElevenLabs, Twilio). Each consumes a public package, no example depends on a private model artifact.
 
 ## Streaming SDK (start here)
 
@@ -70,7 +70,7 @@ Needs **attenlabs-saa >= 0.6.1**, **fastapi**, **uvicorn**, **numpy**, and **twi
 
 ## Conventions
 
-- `SAA_API_KEY` is your Attention Labs API key, the same credential for the streaming SDK and the LiveKit and Pipecat samples. Get one at [attentionlabs.ai](https://attentionlabs.ai).
+- `SAA_API_KEY` is your attention labs API key, the same credential for the streaming SDK and the LiveKit and Pipecat samples. Get one at [attentionlabs.ai](https://attentionlabs.ai).
 - LiveKit samples additionally need `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, plus per-sample provider keys. See each sample's `.env.example`.
 - Pipecat samples need `DAILY_API_KEY` (Daily REST key; mints the bot meeting token locally), plus per-sample provider keys.
 
@@ -83,5 +83,5 @@ Needs **attenlabs-saa >= 0.6.1**, **fastapi**, **uvicorn**, **numpy**, and **twi
 ---
 
 <p align="center">
-  <sub>An Attention Labs project. © 2026.</sub>
+  <sub>An attention labs project. © 2026 Socero Inc.</sub>
 </p>

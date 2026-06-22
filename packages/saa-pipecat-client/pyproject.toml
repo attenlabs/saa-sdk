@@ -5,14 +5,21 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "saa-pipecat-client"
 version = "0.3.1"
-description = "Pipecat / Daily client for saa: consume attention events inside your voice agent."
+description = "Pipecat / Daily client for SAA, the addressee layer for voice agents — gates your Pipecat pipeline to respond only to speech directed at it."
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [
     { name = "Attention Labs" },
 ]
 readme = "README.md"
-keywords = ["pipecat", "daily", "voice-agent", "attention", "vad", "turn-detection"]
+keywords = ["pipecat","daily","voice-agents","voice-ai","addressee-detection","device-directed-speech","turn-detection","vad","conversational-ai","selective-auditory-attention","real-time"]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "pipecat-ai[daily]>=1.0.0,<2",
     "daily-python>=0.19.0,<1",

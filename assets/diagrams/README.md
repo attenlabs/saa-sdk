@@ -1,6 +1,6 @@
 <p align="center">
   <a href="../../README.md">
-    <img alt="SAA: Selective Auditory Attention" src="../../assets/saa-hero-light.svg" width="326">
+    <img alt="SAA: Selective Auditory Attention" src="../../assets/saa-hero.png" width="326">
   </a>
 </p>
 
@@ -44,5 +44,5 @@ Style tokens for every SVG in the repo. Keep new diagrams consistent with what's
 ---
 
 <p align="center">
-  <sub>An Attention Labs project. © 2026.</sub>
+  <sub>An attention labs project. © 2026 Socero Inc.</sub>
 </p>

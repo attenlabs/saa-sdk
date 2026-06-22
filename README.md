@@ -1,5 +1,5 @@
 <p align="center">
-  <img alt="SAA: Selective Auditory Attention" src="./assets/saa-hero-light.svg" width="408">
+  <img alt="SAA: Selective Auditory Attention" src="./assets/saa-hero.png" width="408">
 </p>
 
 <h3 align="center">Tells your voice agent which speech is actually for it.</h3>
@@ -44,7 +44,7 @@ A voice agent's microphone hears every voice in the room: yours, a coworker's, t
     <tr>
       <td align="center"><sub>Only addressed speech wakes the robot.</sub></td>
       <td align="center"><sub>Pill flips green only when the user addresses the screen.</sub></td>
-      <td align="center"><sub>Same room, same audio &mdash; only the addressed robot acts.</sub></td>
+      <td align="center"><sub>Same room, same audio. Only the addressed robot acts.</sub></td>
     </tr>
   </tbody>
 </table>
@@ -52,7 +52,9 @@ A voice agent's microphone hears every voice in the room: yours, a coworker's, t
 **SAA** (Selective Auditory Attention) is a hosted classifier that runs **before STT** and decides, per utterance, whether the speech was directed at the device. Side talk, background media, and the agent's own playback are filtered out, so your STT / LLM / TTS only see audio meant for the agent.
 
 - **No wake word.** SAA decides per-utterance from the audio (and optionally low-rate video) stream.
-- **Hosted.** A WebSocket to Attention Labs' cloud; the open SDKs are thin clients. On-device deployment is a separate enterprise licence.
+- **Hosted.** A real-time WebSocket to attention labs' cloud; the open SDKs are thin clients. Because it gates before STT, only addressed speech reaches the STT, LLM, and TTS you already run, so your downstream services and logs see less audio, not more. On-device deployment is a separate enterprise licence.
+
+The architecture and evaluation are described in the [technical report](https://arxiv.org/abs/2604.08412).
 
 ## Ways to integrate
 
@@ -108,6 +110,8 @@ For audio-only deployments, omit `videoElement` (browser) or pass `enable_video=
 
 Both SDKs also emit `prediction`, `vad`, `state`, `interrupt`, `config`, and `stats` events, and expose `mute()` / `unmute()`, `setThreshold()` / `set_threshold()`, and `markResponding()` / `mark_responding()`. See [`packages/saa-js`](./packages/saa-js) and [`packages/saa-py`](./packages/saa-py).
 
+Runnable end-to-end demos are in [`examples/web/`](./examples/web) (browser) and [`examples/python/`](./examples/python) (terminal).
+
 ## LiveKit
 
 For [LiveKit Agents](https://docs.livekit.io/agents/), `saa-livekit-client` brings SAA into your room to run the classifier and publish events on the `"saa"` data topic. Your agent consumes them through `AttentionEngine` and gates the session.
@@ -155,6 +159,47 @@ await engine.start()
 
 A runnable web-client sample is in [`examples/pipecat/`](./examples/pipecat).
 
+## ElevenLabs
+
+[ElevenLabs Conversational AI](https://elevenlabs.io/docs/eleven-agents/overview) runs its agent in a sealed WebRTC room, so SAA can't join it directly. Instead the streaming SDK runs in feed mode: you hand it the agent's microphone audio through `feed_audio` and gate the agent on SAA's `prediction` events.
+
+```python
+from saa import AttentionClient
+
+# feed mode: the SDK captures nothing itself; you supply the audio
+saa = AttentionClient(token=SAA_API_KEY, enable_audio=False, enable_video=False)
+
+@saa.on_prediction
+def _(p):
+    mic_to_agent.enabled = (p.aligned_class == 2)   # 2 = addressed to the device
+
+saa.start()
+# in ElevenLabs' AudioInterface input callback:
+saa.feed_audio(mic_pcm16)
+```
+
+A runnable sample is in [`examples/elevenlabs/`](./examples/elevenlabs).
+
+## Twilio
+
+For [Twilio Media Streams](https://www.twilio.com/docs/voice/media-streams) telephony agents, the streaming SDK runs in feed mode over the call audio. The adapter transcodes Twilio's μ-law 8 kHz frames to PCM16 16 kHz, feeds them to SAA, and forwards only device-directed turns to your bridge, so side talk, hold music, and the agent's own TTS echo are gated out.
+
+```python
+from saa import AttentionClient
+
+saa = AttentionClient(token=SAA_API_KEY, enable_audio=False, enable_video=False)
+
+@saa.on_turn_ready
+def _(turn):
+    bridge.on_speech(turn.audio_base64)   # only device-directed call audio continues
+
+saa.start()
+# in the Twilio media handler, after decoding μ-law -> PCM16:
+saa.feed_audio(pcm16_frames)
+```
+
+A runnable Media Streams bridge (codec, paced outbound, automatic `mark_responding`) is in [`examples/twilio/`](./examples/twilio).
+
 ## Proactive agents (speak first)
 
 The streaming SDKs expose `markResponding(true)` / `mark_responding(True)` so the agent can assert when *it* is the one speaking, suppressing the gate during its own TTS and resuming once the tail clears. The LiveKit and Pipecat bridges expose the same lifecycle via `engine.responding_start()` / `responding_stop()`, identical surface.
@@ -162,7 +207,7 @@ The streaming SDKs expose `markResponding(true)` / `mark_responding(True)` so th
 
 ## How it composes
 
-SAA is the model-agnostic addressee decision that sits between your VAD and STT. It can complement your wakeword system or replace it.
+SAA is the model-agnostic addressee decision between your VAD and STT. It answers a different question than VAD (is anyone speaking), speaker diarization (which voice it is), turn detection (have they finished), or a wake word (did they say the phrase), so it composes with those layers and can replace the wake word outright.
 
 <p align="center">
   <img alt="Where SAA sits in your voice stack: noise suppression and VAD upstream, SAA addressee gate, then STT → LLM → TTS downstream" src="./assets/diagrams/where-saa-sits-dark.svg" width="820">
@@ -182,12 +227,12 @@ The open SDKs stream to the SAA cloud. For deployments where audio must stay on 
 
 ## License
 
-Apache-2.0 across the repo, each package and the examples ship under it (see each subtree's `LICENSE`). The hosted cloud service is governed by the Attention Labs Terms of Service.
+Apache-2.0 across the repo, each package and the examples ship under it (see each subtree's `LICENSE`). The hosted cloud service is governed by the attention labs Terms of Service.
 
 [`SECURITY.md`](./SECURITY.md) · [`CONTRIBUTING.md`](./CONTRIBUTING.md) · [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) · [`CHANGELOG.md`](./CHANGELOG.md) · [`NOTICE`](./NOTICE) · [`CITATION.cff`](./CITATION.cff)
 
 ---
 
 <p align="center">
-  <sub>An Attention Labs project. © 2026.</sub>
+  <sub>An attention labs project. © 2026 Socero Inc.</sub>
 </p>

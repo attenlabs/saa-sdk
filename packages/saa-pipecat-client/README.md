@@ -1,12 +1,12 @@
 # saa-pipecat-client
 
-Pipecat / Daily client for [saa](https://attentionlabs.ai).
+Pipecat / Daily client for [SAA](https://attentionlabs.ai).
 
 Adds attention-aware gating, barge-in, and proactive interjection to any
 Pipecat voice agent running on Daily, including bots deployed to
 [Daily Bots](https://docs.dailybots.ai/architecture) and Pipecat Cloud.
 
-The attention model runs on Attention Labs' service, so this client is a thin consumer to install. You integrate by
+The attention model runs on attention labs' service, so this client is a thin consumer to install. You integrate by
 minting a Daily meeting token, starting a session, and listening for typed events.
 
 ## Install
@@ -196,4 +196,4 @@ and Pipecat Cloud. No extra deployment knobs.
 
 ## License
 
-Apache-2.0. © Attention Labs.
+Apache-2.0. © Socero Inc.

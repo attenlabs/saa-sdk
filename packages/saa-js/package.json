@@ -3,7 +3,7 @@
   "version": "0.6.1",
   "author": "Attention Labs <omar@attentionlabs.ai>",
   "homepage": "https://attentionlabs.ai",
-  "description": "Browser JS SDK for Attention Labs real-time attention detection. Streams microphone + webcam to the SAA inference server and emits typed events for predictions, VAD, conversation state, and speech audio ready for downstream LLM use.",
+  "description": "Browser/JavaScript SDK for SAA, the addressee layer for voice agents — emits a turn_ready event per device-directed utterance so only speech meant for your agent reaches your STT, LLM, or TTS. No wake word.",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -28,17 +28,27 @@
     "prepublishOnly": "npm run clean && npm run build"
   },
   "keywords": [
-    "attention",
-    "saa",
-    "audio",
-    "video",
+    "voice-agents",
+    "voice-ai",
+    "addressee-detection",
+    "device-directed-speech",
+    "selective-auditory-attention",
+    "turn-detection",
+    "speech-recognition",
     "vad",
-    "realtime",
-    "websocket"
+    "wake-word",
+    "conversational-ai",
+    "real-time",
+    "llm",
+    "stt",
+    "javascript",
+    "browser",
+    "webrtc"
   ],
   "license": "Apache-2.0",
   "repository": { "type": "git", "url": "git+https://github.com/attenlabs/saa-sdk.git", "directory": "packages/saa-js" },
   "bugs": { "url": "https://github.com/attenlabs/saa-sdk/issues" },
+  "changelog": "https://github.com/attenlabs/saa-sdk/blob/main/CHANGELOG.md",
   "devDependencies": {
     "typescript": "^5.4.0"
   }

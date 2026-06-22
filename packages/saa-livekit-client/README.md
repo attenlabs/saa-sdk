@@ -1,6 +1,6 @@
 # saa-livekit-client
 
-LiveKit client for the [saa](https://attentionlabs.ai).
+LiveKit client for the [SAA](https://attentionlabs.ai).
 
 Adds attention-aware gating, barge-in, and proactive interjection to any LiveKit voice agent.
 
@@ -154,4 +154,4 @@ so they never leak to other room participants.
 
 ## License
 
-Apache-2.0. © Attention Labs.
+Apache-2.0. © Socero Inc.

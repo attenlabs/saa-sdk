@@ -1,6 +1,6 @@
 # SAA + Pipecat (on Daily)
 
-A sample that adds **Attention Labs SAA** addressee gating to a [Pipecat](https://github.com/pipecat-ai/pipecat) voice agent running on Daily. SAA decides, per utterance, whether speech in the room was meant for the agent or not.
+A sample that adds **attention labs SAA** addressee gating to a [Pipecat](https://github.com/pipecat-ai/pipecat) voice agent running on Daily. SAA decides, per utterance, whether speech in the room was meant for the agent or not.
 
 The [`web/`](./web) demo is a single `uvicorn` process that creates an ephemeral Daily room, summons the SAA agent, spawns an OpenAI Realtime voice agent into the same room (when `OPENAI_API_KEY` is set), and serves a vanilla HTML/JS frontend that renders SAA's prediction stream as a live overlay.
 
@@ -42,7 +42,7 @@ pipecat-ai 1.x dropped Python 3.10 support, so 3.11+ is required. `pip install` 
 ## Environment
 
 ```
-SAA_API_KEY=                 # Attention Labs API key (shared with the LiveKit samples)
+SAA_API_KEY=                 # attention labs API key (shared with the LiveKit samples)
 DAILY_API_KEY=               # Daily.co REST key from dashboard.daily.co
 OPENAI_API_KEY=              # optional: enables the talkback voice agent
 ```

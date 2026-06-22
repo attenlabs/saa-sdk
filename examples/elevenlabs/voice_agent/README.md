@@ -1,6 +1,6 @@
 # voice_agent: SAA-gated ElevenLabs Conversational AI
 
-An [ElevenLabs Conversational AI](https://elevenlabs.io/docs/eleven-agents/overview) agent with **Attention Labs SAA** addressee gating wired on top, via the streaming SDK's `feed_audio` ingestion.
+An [ElevenLabs Conversational AI](https://elevenlabs.io/docs/eleven-agents/overview) agent with **attention labs SAA** addressee gating wired on top, via the streaming SDK's `feed_audio` ingestion.
 
 ## The integration
 

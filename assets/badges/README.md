@@ -1,6 +1,6 @@
 <p align="center">
   <a href="../../README.md">
-    <img alt="SAA: Selective Auditory Attention" src="../../assets/saa-hero-light.svg" width="326">
+    <img alt="SAA: Selective Auditory Attention" src="../../assets/saa-hero.png" width="326">
   </a>
 </p>
 
@@ -8,18 +8,18 @@
 
 A small SVG shield for projects that integrate SAA. No opt-in, no
 trademark policy. Link the badge to
-<https://github.com/attenlabs/saa> or the relevant package.
+<https://github.com/attenlabs/saa-sdk> or the relevant package.
 
 ## Embed
 
 ```md
-[![Built with SAA](https://attenlabs.github.io/saa/badges/built-with-saa.svg)](https://github.com/attenlabs/saa)
+[![Built with SAA](https://raw.githubusercontent.com/attenlabs/saa-sdk/main/assets/badges/built-with-saa.svg)](https://github.com/attenlabs/saa-sdk)
 ```
 
 ```html
-<a href="https://github.com/attenlabs/saa">
+<a href="https://github.com/attenlabs/saa-sdk">
   <img alt="Built with SAA"
-       src="https://attenlabs.github.io/saa/badges/built-with-saa.svg" height="20">
+       src="https://raw.githubusercontent.com/attenlabs/saa-sdk/main/assets/badges/built-with-saa.svg" height="20">
 </a>
 ```
 
@@ -36,5 +36,5 @@ is shorthand for "links to the SAA repo."
 ---
 
 <p align="center">
-  <sub>An Attention Labs project. © 2026.</sub>
+  <sub>An attention labs project. © 2026 Socero Inc.</sub>
 </p>

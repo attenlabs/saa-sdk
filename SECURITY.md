@@ -4,9 +4,10 @@
 
 | Package | Version | Status |
 |---|---|---|
-| `@attenlabs/saa-js` | `0.3.x` | Supported |
-| `attenlabs-saa` (PyPI) | `0.3.x` | Supported |
-| `saa-livekit-client` (PyPI) | `0.1.x` | Supported |
+| `@attenlabs/saa-js` | `0.6.x` | Supported |
+| `attenlabs-saa` (PyPI) | `0.6.x` | Supported |
+| `saa-livekit-client` (PyPI) | `0.3.x` | Supported |
+| `saa-pipecat-client` (PyPI) | `0.3.x` | Supported |
 | Older versions | (prior) | End-of-life; please upgrade |
 
 ## Reporting a vulnerability
@@ -27,7 +28,7 @@ If you discover a security issue in the SAA SDKs, the cloud service, or any fram
 
 - The published packages (`@attenlabs/saa-js`, `attenlabs-saa`, `saa-livekit-client`).
 - The examples under [`examples/`](./examples/) when used as documented.
-- The cloud service at `server.attentionlabs.ai` (please mark cloud-service reports clearly).
+- The cloud service reached via the `broker.attentionlabs.ai` allocator (please mark cloud-service reports clearly).
 
 **Out of scope.**
 

@@ -2,7 +2,7 @@
 
 Build agents that know when the user is actually talking to them. Save on tokens.
 
-Python sample app for [Attention Labs](https://attentionlabs.ai) real-time selective auditory attention (SAA).
+Python sample app for [attention labs](https://attentionlabs.ai) real-time selective auditory attention (SAA).
 
 Every voice pipeline has the same problem: the microphone hears everything, but your ASR should only process speech directed at the device. Wake words solve this with a rigid trigger phrase. SAA solves it without one.
 
@@ -47,7 +47,7 @@ Follow the steps in order. Should take about 5 minutes.
 
 ### 1. Get a SAA auth token
 
-Sign up at the [Attention Labs dashboard](https://attentionlabs.ai/dashboard/) and copy your token.
+Sign up at the [attention labs dashboard](https://attentionlabs.ai/dashboard/) and copy your token.
 
 ### 2. (Optional) Get an OpenAI API key
 
