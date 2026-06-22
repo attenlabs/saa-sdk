@@ -7,6 +7,6 @@
     .saa-underline { fill: #065f46; }
   </style>
   <text x="360" y="130" textLength="200" lengthAdjust="spacingAndGlyphs" class="saa-text" font-family="'IBM Plex Sans Condensed', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Inter', 'Helvetica Neue', system-ui, sans-serif" font-size="110" font-weight="700" text-anchor="middle">SAA</text>
-  <rect x="318" y="148" width="66" height="5" rx="2.5" class="saa-underline"/>
+  <rect x="322" y="148" width="66" height="5" rx="2.5" class="saa-underline"/>
   <text x="360" y="205" class="saa-subtitle" font-family="'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Inter', 'Helvetica Neue', system-ui, sans-serif" font-size="26" font-weight="500" text-anchor="middle" letter-spacing="2">SELECTIVE AUDITORY ATTENTION</text>
 </svg>
