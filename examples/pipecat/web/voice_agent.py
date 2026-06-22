@@ -1,6 +1,14 @@
 """SAA-gated OpenAI Realtime voice agent for the web demo.
 
 One-key talkback. Cascaded variant lives in `../voice_agent_cascaded/`.
+
+Turn-taking is owned by SAA, not by OpenAI:
+
+- OpenAI's server-side VAD/turn detection is DISABLED
+- Mic audio is fed to the model only while SAA reports class 2 (talking-to-device)
+- A response is committed + requested only when SAA emits `on_turn_ready`
+
+The result: the bot responds when, and only when, the user addresses it.
 """
 from __future__ import annotations
 
@@ -14,14 +22,15 @@ from pipecat.pipeline.task import PipelineTask
 from pipecat.pipeline.runner import PipelineRunner
 
 from pipecat.services.openai.realtime.llm import OpenAIRealtimeLLMService
+from pipecat.services.openai.realtime import events
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.frames.frames import (
     Frame,
-    InputAudioRawFrame,
     InterruptionTaskFrame,
     LLMMessagesAppendFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
+    UserStoppedSpeakingFrame,
 )
 
 from saa_pipecat_client import AttentionEngine, AttentionStartupError
@@ -29,18 +38,6 @@ from saa_pipecat_client import AttentionEngine, AttentionStartupError
 logger = logging.getLogger("web.voice_agent")
 
 OPENAI_REALTIME_SAMPLE_RATE = 24000
-
-
-class _AddresseeGate(FrameProcessor):
-    def __init__(self) -> None:
-        super().__init__()
-        self.suppressed = False
-
-    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
-        await super().process_frame(frame, direction)
-        if self.suppressed and isinstance(frame, InputAudioRawFrame):
-            return
-        await self.push_frame(frame, direction)
 
 
 class _BotSpeakingObserver(FrameProcessor):
@@ -86,19 +83,25 @@ async def run_voice_agent(
 
     realtime = OpenAIRealtimeLLMService(
         api_key=openai_api_key,
+        # no mic audio reaches the model until SAA opens the gate
+        start_audio_paused=True,
         settings=OpenAIRealtimeLLMService.Settings(
             model=model,
             system_instruction=system_prompt,
+            # disable OpenAI's server-side VAD/turn detection
+            session_properties=events.SessionProperties(
+                audio=events.AudioConfiguration(
+                    input=events.AudioInput(turn_detection=False),
+                ),
+            ),
         ),
     )
 
-    addressee_gate = _AddresseeGate()
     bot_speaking = _BotSpeakingObserver()
 
     pipeline = Pipeline(
         [
             transport.input(),
-            addressee_gate,
             realtime,
             bot_speaking,
             transport.output(),
@@ -112,7 +115,16 @@ async def run_voice_agent(
 
     @engine.on_prediction
     def _(p) -> None:
-        addressee_gate.suppressed = p.aligned_class == 1 and p.confidence > 0.7
+        realtime.set_audio_input_paused(p.aligned_class != 2)
+
+    @engine.on_turn_ready
+    async def _(ev) -> None:
+        # SAA finished a device-directed turn, commit tp openai
+        logger.info(
+            "SAA turn_ready (%.1fs) — committing turn + requesting response",
+            ev.duration,
+        )
+        await task.queue_frames([UserStoppedSpeakingFrame()])
 
     @engine.on_interrupt
     async def _(ev) -> None:
