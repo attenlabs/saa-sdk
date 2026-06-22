@@ -154,4 +154,4 @@ so they never leak to other room participants.
 
 ## License
 
-Apache-2.0. © Attention Labs.
+Apache-2.0. © Socero Inc.

@@ -44,5 +44,5 @@ Style tokens for every SVG in the repo. Keep new diagrams consistent with what's
 ---
 
 <p align="center">
-  <sub>An attention labs project. © 2026.</sub>
+  <sub>An attention labs project. © 2026 Socero Inc.</sub>
 </p>

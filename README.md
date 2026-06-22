@@ -234,5 +234,5 @@ Apache-2.0 across the repo, each package and the examples ship under it (see eac
 ---
 
 <p align="center">
-  <sub>An attention labs project. © 2026.</sub>
+  <sub>An attention labs project. © 2026 Socero Inc.</sub>
 </p>

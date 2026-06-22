@@ -83,5 +83,5 @@ Needs **attenlabs-saa >= 0.6.1**, **fastapi**, **uvicorn**, **numpy**, and **twi
 ---
 
 <p align="center">
-  <sub>An attention labs project. © 2026.</sub>
+  <sub>An attention labs project. © 2026 Socero Inc.</sub>
 </p>

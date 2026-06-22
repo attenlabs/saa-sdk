@@ -196,4 +196,4 @@ and Pipecat Cloud. No extra deployment knobs.
 
 ## License
 
-Apache-2.0. © Attention Labs.
+Apache-2.0. © Socero Inc.

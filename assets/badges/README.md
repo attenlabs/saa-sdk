@@ -36,5 +36,5 @@ is shorthand for "links to the SAA repo."
 ---
 
 <p align="center">
-  <sub>An attention labs project. © 2026.</sub>
+  <sub>An attention labs project. © 2026 Socero Inc.</sub>
 </p>
