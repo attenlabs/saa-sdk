@@ -63,6 +63,11 @@
     </div>
   </div>
 
+  <div class="pred-buffer-wrap">
+    <div class="pred-buffer-title">Recent predictions</div>
+    <ul class="pred-buffer" id="predBuffer"></ul>
+  </div>
+
   <div class="tokens-block" id="tokensBlock">
     <div class="tokens-eyebrow">Tokens Saved</div>
     <div class="tokens-row">
@@ -83,23 +88,17 @@
     <div class="cam-tag">CAM</div>
   </div>
 
-  <div class="orb-wrap">
-    <div class="orb-ring-3"></div>
-    <div class="orb-ring-2"></div>
-    <div class="orb-ring"></div>
-    <div class="orb" id="orb">
-      <div class="orb-inner-glow"></div>
-      <div class="sound-bars" id="soundBars">
-        <div class="sound-bar" style="height:8px"></div>
-        <div class="sound-bar" style="height:8px"></div>
-        <div class="sound-bar" style="height:8px"></div>
-        <div class="sound-bar" style="height:8px"></div>
-        <div class="sound-bar" style="height:8px"></div>
-      </div>
-    </div>
-    <div class="warmup-bar" id="warmupBar" aria-hidden="true">
-      <div class="warmup-bar-fill" id="warmupBarFill"></div>
-    </div>
+  <div class="warmup-panel" id="warmupPanel">
+    <div class="warmup-title">Warming up</div>
+    <ul class="warm-steps" id="warmSteps">
+      <li data-step="vision"><span class="glyph"></span><span>Initializing vision model</span><span class="pct"></span></li>
+      <li data-step="audio"><span class="glyph"></span><span>Initializing audio model</span><span class="pct"></span></li>
+      <li data-step="fusion"><span class="glyph"></span><span>Fusing multimodal embeddings</span><span class="pct"></span></li>
+      <li data-step="calib"><span class="glyph"></span><span>Calibrating to your room</span><span class="pct"></span></li>
+      <li data-step="classif"><span class="glyph"></span><span>Warming up classifier</span><span class="pct"></span></li>
+    </ul>
+    <div class="warmup-bar"><div class="bar-fill" id="warmupBarFill"></div></div>
+    <span class="warmup-pct" id="warmupPct">0%</span>
   </div>
 
   <div class="suggestion" id="suggestion">

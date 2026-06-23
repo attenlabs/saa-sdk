@@ -28,7 +28,7 @@ If you discover a security issue in the SAA SDKs, the cloud service, or any fram
 
 - The published packages (`@attenlabs/saa-js`, `attenlabs-saa`, `saa-livekit-client`).
 - The examples under [`examples/`](./examples/) when used as documented.
-- The cloud service at `server.attentionlabs.ai` (please mark cloud-service reports clearly).
+- The cloud service reached via the `broker.attentionlabs.ai` allocator (please mark cloud-service reports clearly).
 
 **Out of scope.**
 

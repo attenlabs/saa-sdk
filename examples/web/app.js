@@ -52,9 +52,9 @@ const statFaces    = document.getElementById("statFaces");
 const statVad      = document.getElementById("statVad");
 const statConv     = document.getElementById("statConv");
 const btn          = document.getElementById("btnConnect");
-const orbEl        = document.getElementById("orb");
-const soundBars    = document.getElementById("soundBars");
 const warmupBarFill = document.getElementById("warmupBarFill");
+const warmStepsEl  = document.getElementById("warmSteps");
+const warmupPctEl  = document.getElementById("warmupPct");
 const videoEl      = document.getElementById("videoEl");
 const camPlaceholder = videoEl.previousElementSibling;
 const threshSlider = document.getElementById("threshSlider");
@@ -75,6 +75,18 @@ let pred = { s: "silent", conf: 0, faces: 0 };
 let vadStr = "--";
 let convStr = "--";
 let modelClass2Threshold = 0.85;
+
+// Warmup progress: model needs ~50 ticks of audio/video history before it
+// makes a confident prediction. Drive the staged warmup card off this count;
+// the flip to warmedUp happens ONLY on the SDK's warmupComplete event.
+const WARMUP_TICKS = 50;
+let _predCount = 0;
+
+// Rolling buffer of recent model predictions (newest first), shown as a small
+// log under the stats. Compact labels mirror the livekit/pipecat web demos.
+const PRED_BUFFER_MAX = 12;
+const BUF_LABELS = { 0: "silent", 1: "human ↔ human", 2: "talking to me" };
+const predBuffer = [];
 
 let currentSuggestion = -1;
 let guideStep = GUIDE_STEPS.AWAITING_COMPUTER;
@@ -226,6 +238,68 @@ function updateGuidedPrompt(p) {
   showSuggestion(2);
 }
 
+// ── Warmup checklist + bar ─────────────────────────────────────────────────
+function renderWarmup(count) {
+  const pct = Math.min(1, count / WARMUP_TICKS);
+  warmupBarFill.style.width = `${pct * 100}%`;
+  warmupPctEl.textContent = `${Math.round(pct * 100)}%`;
+
+  const lis = warmStepsEl.querySelectorAll("li");
+  const stepSize = WARMUP_TICKS / lis.length;
+  const activeIdx = Math.min(lis.length, Math.floor(count / stepSize));
+  lis.forEach((li, i) => {
+    li.classList.toggle("done",  i < activeIdx);
+    li.classList.toggle("active", i === activeIdx && i < lis.length);
+    const pctSpan = li.querySelector(".pct");
+    if (pctSpan) pctSpan.textContent = i < activeIdx ? "100%" : i === activeIdx ? "…" : "";
+  });
+}
+
+function finalizeWarmup() {
+  warmupBarFill.style.width = "100%";
+  warmupPctEl.textContent = "100%";
+  warmStepsEl.querySelectorAll("li").forEach((li) => {
+    li.classList.add("done");
+    li.classList.remove("active");
+    const pctSpan = li.querySelector(".pct");
+    if (pctSpan) pctSpan.textContent = "100%";
+  });
+}
+
+// ── Rolling prediction buffer ──────────────────────────────────────────────
+function pushPredBuffer(e) {
+  predBuffer.unshift({
+    cls: e.cls,
+    raw: e.rawCls,
+    conf: e.confidence ?? 0,
+    faces: e.numFaces ?? 0,
+    responding: !!e.responding,
+  });
+  predBuffer.length = Math.min(predBuffer.length, PRED_BUFFER_MAX);
+  renderPredBuffer();
+}
+
+function renderPredBuffer() {
+  const ul = document.getElementById("predBuffer");
+  if (!ul) return;
+  ul.innerHTML = predBuffer
+    .map((r) => {
+      const label = r.responding ? "responding" : (BUF_LABELS[r.cls] ?? "?");
+      const raw =
+        !r.responding && r.raw != null && r.raw !== r.cls
+          ? `<span class="buf-raw">(raw ${r.raw})</span>`
+          : "";
+      return (
+        `<li data-cls="${r.cls}" data-responding="${r.responding}">` +
+        `<span class="chip">${label}${raw}</span>` +
+        `<span class="buf-conf">${Math.round(r.conf * 100)}%</span>` +
+        `<span class="buf-faces">faces: ${r.faces}</span>` +
+        `</li>`
+      );
+    })
+    .join("");
+}
+
 // ── Render: rebuild visible UI from latest signals ─────────────────────────
 function render() {
   // Treat the "speech sent → AI roundtrip" window as already-responding so
@@ -249,8 +323,6 @@ function render() {
     statFaces.textContent = "--";
     statVad.textContent = "--";
     statConv.textContent = "--";
-    soundBars.classList.remove("visible");
-    orbEl.classList.remove("active", "warming");
     hideSuggestion();
     return;
   }
@@ -262,23 +334,15 @@ function render() {
     statFaces.textContent = pred.faces || "--";
     statVad.textContent = vadStr;
     statConv.textContent = convStr;
-    soundBars.classList.remove("visible");
-    orbEl.classList.remove("active");
-    orbEl.classList.add("warming");
     hideSuggestion();
     return;
   }
 
-  orbEl.classList.remove("warming");
   classNameEl.textContent = st.label;
   confPctEl.textContent = pred.conf > 0 ? Math.round(pred.conf * 100) + "%" : "--";
   statFaces.textContent = pred.faces ?? "--";
   statVad.textContent = vadStr;
   statConv.textContent = convStr;
-
-  const speaking = llmActive || (pred.s !== "silent" && pred.conf > 0.3);
-  soundBars.classList.toggle("visible", speaking);
-  orbEl.classList.toggle("active", speaking);
 
   // Tokens ticker runs only when speech is human-directed (not at the device).
   if (!llmActive && pred.s === "human" && pred.conf > 0.3) {
@@ -324,11 +388,10 @@ async function start() {
   llmActive = false;
   greetingPending = false;
   aiResponsePending = false;
-  // Warmup progress: model needs ~50 ticks of audio/video history before it
-  // makes a confident prediction. Drive the warmup bar fill off this count.
-  let _predCount = 0;
-  const WARMUP_TICKS = 50;
-  warmupBarFill.style.width = "0%";
+  _predCount = 0;
+  renderWarmup(0);
+  predBuffer.length = 0;
+  renderPredBuffer();
   pred = { s: "silent", conf: 0, faces: 0 };
   vadStr = "--";
   convStr = "--";
@@ -354,7 +417,7 @@ async function start() {
 
   client.on("warmupComplete", () => {
     warmedUp = true;
-    warmupBarFill.style.width = "100%";
+    finalizeWarmup();
     // Disable with ?nogreet for diagnostics (e.g. when chasing feedback loops).
     // When the greeting fires we block the suggestion card with greetingPending
     // until the AI has finished its hello — otherwise the first post-warmup
@@ -372,8 +435,9 @@ async function start() {
   client.on("prediction", (e) => {
     if (!warmedUp) {
       _predCount++;
-      const pct = Math.min(100, (_predCount / WARMUP_TICKS) * 100);
-      warmupBarFill.style.width = pct + "%";
+      renderWarmup(_predCount);
+    } else {
+      pushPredBuffer(e); // log real post-warmup predictions
     }
     if (llmActive) return;
     const s = CLASS_TO_STATE[e.cls] ?? "silent";
@@ -527,7 +591,10 @@ async function stop() {
   currentSuggestion = -1;
   guideStep = GUIDE_STEPS.AWAITING_COMPUTER;
   resetTicker();
-  warmupBarFill.style.width = "0%";
+  _predCount = 0;
+  renderWarmup(0);
+  predBuffer.length = 0;
+  renderPredBuffer();
 
   videoEl.style.display = "none";
   if (camPlaceholder) camPlaceholder.style.display = "flex";

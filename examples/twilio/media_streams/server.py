@@ -31,9 +31,15 @@ What this file does:
   (initiated / ringing / answered / completed)
 * serves ``/twilio`` (WebSocket), bidirectional Media Streams handler
 * serves ``/health`` (GET) and ``/ready`` (GET) for liveness / readiness probes
-* serves ``/stats`` (GET) returning Prometheus-shaped aggregate counters
+* serves ``/stats`` (GET) returning JSON aggregate counters
   (calls, audio bytes, SAA errors, barge-ins)
+* serves ``/metrics`` (GET) returning the same aggregate counters in
+  Prometheus text exposition format (for direct Prometheus scraping)
 * validates the ``X-Twilio-Signature`` header when ``TWILIO_AUTH_TOKEN`` is set
+  (and can ``REQUIRE_TWILIO_SIGNATURE`` to fail closed on unsigned requests)
+* enforces optional cost/abuse ceilings, max call duration, idle hangup,
+  max concurrent calls, a dead-socket WS idle timeout, and a bounded bridge
+  ``open()`` (all configured via the environment; see the Config block)
 * gates every call through SAA using ``enable_audio=False`` / ``enable_video=False``
   plus the SDK's public ``feed_audio()`` API (no local mic / cam is opened)
 * paces outbound TTS at Twilio's recommended ~20 ms cadence so barge-in
@@ -116,6 +122,40 @@ SAA_WAIT_READY_SECONDS = float(os.environ.get("SAA_WAIT_READY_SECONDS", "3.0"))
 # echo of the last TTS byte doesn't re-trigger SAA. Counted from the
 # moment the outbound queue drains.
 RESPONDING_TAIL_SECONDS = float(os.environ.get("RESPONDING_TAIL_SECONDS", "0.25"))
+
+# ── Hardening knobs ──────────────────────────────────────────────────────
+# All default OFF/permissive so a fresh checkout behaves exactly as before;
+# operators opt in to cost/abuse ceilings via the environment. The two that
+# default ON (WS idle + bridge-open timeouts) only reap zombie/stalled calls
+# and never cut a legitimate, actively-streaming call.
+#
+# Hard cap on a single call's wall-clock duration. SAA/Twilio bill per
+# minute, so a stuck stream that never sends a `stop` is a money leak.
+# "0" disables the cap (default). Set e.g. "1800" (30 min) in production.
+MAX_CALL_DURATION_SECONDS = float(os.environ.get("MAX_CALL_DURATION_SECONDS", "0"))
+# Hang up a call that has gone fully idle (no inbound media AND nothing
+# flowing outbound) for this long. Guards against carriers that hold a
+# stream open after the human is gone. "0" disables (default).
+IDLE_HANGUP_SECONDS = float(os.environ.get("IDLE_HANGUP_SECONDS", "0"))
+# Reject new inbound calls once this many are already active (back-pressure
+# / abuse ceiling). "0" disables the limit (default).
+MAX_CONCURRENT_CALLS = int(os.environ.get("MAX_CONCURRENT_CALLS", "0"))
+# Close the Twilio Media Streams WebSocket if no frame of ANY kind arrives
+# for this long. Twilio sends media every 20 ms on a live call, so a 60 s
+# gap means the socket is dead, reap it instead of leaking the task/SAA
+# session. On by default; won't cut a call that is actually streaming.
+TWILIO_WS_IDLE_TIMEOUT = float(os.environ.get("TWILIO_WS_IDLE_TIMEOUT", "60"))
+# Max seconds to wait for the bridge's `open()` (which may dial an upstream
+# LLM socket) before tearing the call down. A bridge that hangs on connect
+# would otherwise pin a paid call in silence. On by default.
+BRIDGE_OPEN_TIMEOUT = float(os.environ.get("BRIDGE_OPEN_TIMEOUT", "10.0"))
+# When set, require a valid X-Twilio-Signature on every webhook even if
+# TWILIO_AUTH_TOKEN validation would otherwise be a no-op path. Off by
+# default (dev convenience); production should set TWILIO_AUTH_TOKEN and
+# turn this on.
+REQUIRE_TWILIO_SIGNATURE = os.environ.get("REQUIRE_TWILIO_SIGNATURE", "").lower() in (
+    "1", "true", "yes", "on",
+)
 
 # Twilio sends 20 ms (160 samples = 320 PCM16 bytes) frames @ 8 kHz.
 # After upsample to 16 kHz, that becomes 640 bytes per frame. SAA expects
@@ -412,6 +452,27 @@ async def stats_snapshot() -> JSONResponse:
     return JSONResponse(snapshot)
 
 
+@app.get("/metrics")
+async def metrics() -> PlainTextResponse:
+    """Same aggregate counters as ``/stats`` in Prometheus text format.
+
+    Emits one ``# TYPE`` line plus one sample line per counter, suitable
+    for a Prometheus scrape. Every key is a ``counter`` except
+    ``calls_active`` which is a ``gauge``. The snapshot is process-local;
+    multi-worker deployments should scrape each worker pod.
+    """
+    with _AGGREGATE_LOCK:
+        snapshot = dict(_AGGREGATE_STATS)
+    lines: list[str] = []
+    for key, value in snapshot.items():
+        metric_type = "gauge" if key == "calls_active" else "counter"
+        name = f"saa_twilio_{key}"
+        lines.append(f"# TYPE {name} {metric_type}")
+        lines.append(f"{name} {value}")
+    text = "\n".join(lines) + "\n"
+    return PlainTextResponse(text, media_type="text/plain; version=0.0.4")
+
+
 def _validate_twilio_signature(request: Request, body: bytes) -> None:
     """Validate the X-Twilio-Signature header against the request body.
 
@@ -423,6 +484,14 @@ def _validate_twilio_signature(request: Request, body: bytes) -> None:
     Reference: https://www.twilio.com/docs/usage/security#validating-requests
     """
     if not TWILIO_AUTH_TOKEN:
+        if REQUIRE_TWILIO_SIGNATURE:
+            # Fail closed: the operator demanded signature enforcement but
+            # gave us no token to validate against. Refuse rather than wave
+            # the request through unverified.
+            raise HTTPException(
+                status_code=500,
+                detail="REQUIRE_TWILIO_SIGNATURE set but TWILIO_AUTH_TOKEN is unset",
+            )
         return
     try:
         from twilio.request_validator import RequestValidator
@@ -577,6 +646,20 @@ async def twilio_media_stream(ws: WebSocket) -> None:
         await ws.close(code=1011)
         return
 
+    # Concurrency ceiling (abuse / back-pressure guard). Reject the call
+    # before we spend any SAA quota on it. "0" disables the limit.
+    if MAX_CONCURRENT_CALLS > 0:
+        with _AGGREGATE_LOCK:
+            active = _AGGREGATE_STATS["calls_active"]
+        if active >= MAX_CONCURRENT_CALLS:
+            log.warning(
+                "concurrent-call ceiling reached (%d active >= %d max), rejecting call",
+                int(active), MAX_CONCURRENT_CALLS,
+            )
+            with suppress(Exception):
+                await ws.close(code=1013)  # 1013 = Try Again Later
+            return
+
     conn_id = uuid.uuid4().hex[:8]
     loop = asyncio.get_running_loop()
     bridge = await _make_bridge()
@@ -697,7 +780,12 @@ async def twilio_media_stream(ws: WebSocket) -> None:
     session: Optional[_TwilioCallSession] = None
     saa_started = False
     sender_task: Optional[asyncio.Task] = None
+    watchdog_task: Optional[asyncio.Task] = None
     hangup_dispatched = False
+    # Wall-clock the call was answered (start event seen) and the last time
+    # inbound media arrived. Drive the max-duration / idle-hangup watchdog.
+    call_started_at: Optional[float] = None
+    last_media_at = time.monotonic()
 
     async def _force_disconnect(reason: str) -> None:
         nonlocal hangup_dispatched
@@ -717,6 +805,43 @@ async def twilio_media_stream(ws: WebSocket) -> None:
             await bridge.on_caller_hangup()
         except Exception:  # noqa: BLE001
             log.exception("[bridge %s] on_caller_hangup raised", conn_id)
+
+    async def _call_watchdog() -> None:
+        """Enforce the max-call-duration and idle-hangup ceilings.
+
+        Wakes once a second and force-disconnects the call if it has run
+        past ``MAX_CALL_DURATION_SECONDS`` of wall clock, or has been fully
+        idle (no inbound media) for ``IDLE_HANGUP_SECONDS``. Both default
+        to 0 (disabled). A disabled watchdog still runs but never trips, so
+        the loop body stays trivial. ``call_started_at`` is only set once
+        the ``start`` event lands, so the duration cap times from answer.
+        """
+        if MAX_CALL_DURATION_SECONDS <= 0 and IDLE_HANGUP_SECONDS <= 0:
+            return  # nothing to enforce; don't burn a task on a no-op loop
+        while not hangup_dispatched:
+            await asyncio.sleep(1.0)
+            now = time.monotonic()
+            if (
+                MAX_CALL_DURATION_SECONDS > 0
+                and call_started_at is not None
+                and now - call_started_at >= MAX_CALL_DURATION_SECONDS
+            ):
+                log.warning(
+                    "[twilio %s] max call duration %.0fs reached, disconnecting",
+                    conn_id, MAX_CALL_DURATION_SECONDS,
+                )
+                await _force_disconnect("max-call-duration")
+                return
+            if (
+                IDLE_HANGUP_SECONDS > 0
+                and now - last_media_at >= IDLE_HANGUP_SECONDS
+            ):
+                log.warning(
+                    "[twilio %s] idle for %.0fs (no inbound media), disconnecting",
+                    conn_id, IDLE_HANGUP_SECONDS,
+                )
+                await _force_disconnect("idle-hangup")
+                return
 
     async def _paced_outbound_sender() -> None:
         """Drain ``outbound_queue`` and ship 20 ms µ-law frames to Twilio.
@@ -802,7 +927,25 @@ async def twilio_media_stream(ws: WebSocket) -> None:
 
     try:
         while True:
-            raw = await ws.receive_text()
+            # Reap a dead socket: a live Twilio call sends a frame every
+            # 20 ms, so no frame of any kind for TWILIO_WS_IDLE_TIMEOUT
+            # means the stream is gone. Bounds the receive so a half-open
+            # connection can't leak the task + SAA session indefinitely.
+            # "0" disables the bound (block forever, original behaviour).
+            if TWILIO_WS_IDLE_TIMEOUT > 0:
+                try:
+                    raw = await asyncio.wait_for(
+                        ws.receive_text(), TWILIO_WS_IDLE_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    log.warning(
+                        "[twilio %s] no frame for %.0fs, closing dead stream=%s",
+                        conn_id, TWILIO_WS_IDLE_TIMEOUT, stream_sid,
+                    )
+                    await _dispatch_hangup_once()
+                    break
+            else:
+                raw = await ws.receive_text()
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
@@ -868,20 +1011,49 @@ async def twilio_media_stream(ws: WebSocket) -> None:
                 # shape took only ctx. Detect via signature so older
                 # bridges keep working unchanged.
                 import inspect
-                try:
-                    sig = inspect.signature(bridge.open)
-                    if len(sig.parameters) >= 2:
+
+                async def _open_bridge() -> None:
+                    try:
+                        sig = inspect.signature(bridge.open)
+                        if len(sig.parameters) >= 2:
+                            await bridge.open(call_ctx, session)
+                        else:
+                            await bridge.open(call_ctx)  # type: ignore[call-arg]
+                    except (TypeError, ValueError):
                         await bridge.open(call_ctx, session)
+
+                # Bound the bridge open(): it may dial an upstream LLM
+                # socket, and a hang there would otherwise pin a paid call
+                # in silence. "0" disables the timeout. On timeout we tear
+                # the call down rather than wait for Twilio to give up.
+                try:
+                    if BRIDGE_OPEN_TIMEOUT > 0:
+                        await asyncio.wait_for(_open_bridge(), BRIDGE_OPEN_TIMEOUT)
                     else:
-                        await bridge.open(call_ctx)  # type: ignore[call-arg]
-                except (TypeError, ValueError):
-                    await bridge.open(call_ctx, session)
+                        await _open_bridge()
+                except asyncio.TimeoutError:
+                    log.error(
+                        "[twilio %s] bridge.open() exceeded %.1fs, disconnecting",
+                        conn_id, BRIDGE_OPEN_TIMEOUT,
+                    )
+                    await _force_disconnect("bridge-open-timeout")
+                    break
                 sender_task = asyncio.create_task(
                     _paced_outbound_sender(),
                     name=f"twilio-out-{stream_sid}",
                 )
+                # Start the duration/idle watchdog now that the call is
+                # answered. It no-ops cheaply when both ceilings are off.
+                call_started_at = time.monotonic()
+                last_media_at = time.monotonic()
+                watchdog_task = asyncio.create_task(
+                    _call_watchdog(),
+                    name=f"twilio-watchdog-{stream_sid}",
+                )
 
             elif event == "media":
+                # Inbound media is liveness, refresh the idle-hangup clock.
+                last_media_at = time.monotonic()
                 payload = (msg.get("media") or {}).get("payload")
                 if not payload:
                     continue
@@ -952,6 +1124,12 @@ async def twilio_media_stream(ws: WebSocket) -> None:
             sender_task.cancel()
             with suppress(asyncio.CancelledError, Exception):
                 await sender_task
+        # Stop the duration/idle watchdog so it can't fire a hangup into a
+        # call that's already tearing down.
+        if watchdog_task is not None:
+            watchdog_task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await watchdog_task
         with suppress(Exception):
             await bridge.close()
         duration = time.monotonic() - stats.started_at

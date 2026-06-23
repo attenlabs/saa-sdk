@@ -15,11 +15,19 @@
 
       <div id="prediction" data-class="0">
         <div id="class-label">--</div>
-        <div id="conf-bar"><div id="conf-fill"></div></div>
+        <div id="conf-row">
+          <div id="conf-bar"><div id="conf-fill"></div></div>
+          <span id="conf-num">0%</span>
+        </div>
         <div id="meta">
           <span id="vad">VAD: off</span>
           <span id="faces">faces: 0</span>
         </div>
+      </div>
+
+      <div id="pred-buffer-wrap">
+        <div class="pred-buffer-title">Recent predictions</div>
+        <ul id="pred-buffer"></ul>
       </div>
 
       <div id="video-container">

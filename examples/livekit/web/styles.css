@@ -101,8 +101,15 @@ header h1 {
   transition: color 0.15s ease;
 }
 
-#conf-bar {
+#conf-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 12px 0;
+}
+
+#conf-bar {
+  flex: 1;
   height: 8px;
   border-radius: 4px;
   background: #16262a;
@@ -114,6 +121,14 @@ header h1 {
   width: 0%;
   background: var(--state);
   transition: width 0.12s linear, background 0.15s ease;
+}
+
+#conf-num {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  text-align: right;
+  min-width: 34px;
 }
 
 #meta {
@@ -158,4 +173,60 @@ button:disabled {
   background: #16262a;
   color: var(--muted);
   cursor: not-allowed;
+}
+
+#pred-buffer-wrap {
+  margin: 20px 0;
+}
+
+.pred-buffer-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+#pred-buffer {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+#pred-buffer li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  background: #0b1517;
+  border: 1px solid #16262a;
+  border-radius: 6px;
+}
+
+#pred-buffer .chip {
+  font-weight: 600;
+  color: var(--class-0);
+}
+
+#pred-buffer li[data-cls="1"] .chip { color: var(--class-1); }
+#pred-buffer li[data-cls="2"] .chip { color: var(--class-2); }
+#pred-buffer li[data-responding="true"] .chip { color: var(--responding); }
+
+#pred-buffer .buf-conf,
+#pred-buffer .buf-faces {
+  color: var(--muted);
+}
+
+#pred-buffer .buf-raw {
+  color: var(--muted);
+  font-size: 11px;
+  margin-left: 6px;
 }

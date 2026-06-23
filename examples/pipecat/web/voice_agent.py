@@ -1,11 +1,21 @@
 """SAA-gated OpenAI Realtime voice agent for the web demo.
 
 One-key talkback. Cascaded variant lives in `../voice_agent_cascaded/`.
+
+Turn-taking is owned by SAA, not by OpenAI:
+
+- OpenAI's server-side VAD/turn detection is DISABLED
+- Mic audio is fed to the model only while SAA reports class 2 (talking-to-device)
+- A response is committed + requested only when SAA emits `on_turn_ready`
+
+The result: the bot responds when, and only when, the user addresses it.
 """
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
+import numpy as np
 from typing import Optional
 
 from pipecat.transports.daily.transport import DailyTransport, DailyParams
@@ -14,10 +24,10 @@ from pipecat.pipeline.task import PipelineTask
 from pipecat.pipeline.runner import PipelineRunner
 
 from pipecat.services.openai.realtime.llm import OpenAIRealtimeLLMService
+from pipecat.services.openai.realtime import events
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.frames.frames import (
     Frame,
-    InputAudioRawFrame,
     InterruptionTaskFrame,
     LLMMessagesAppendFrame,
     TTSStartedFrame,
@@ -31,16 +41,13 @@ logger = logging.getLogger("web.voice_agent")
 OPENAI_REALTIME_SAMPLE_RATE = 24000
 
 
-class _AddresseeGate(FrameProcessor):
-    def __init__(self) -> None:
-        super().__init__()
-        self.suppressed = False
-
-    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
-        await super().process_frame(frame, direction)
-        if self.suppressed and isinstance(frame, InputAudioRawFrame):
-            return
-        await self.push_frame(frame, direction)
+def _turn_audio_to_24k_b64(pcm16_16k: bytes) -> str:
+    """
+    SAA turn audio is int16 mono 16 kHz; gpt-realtime needs 24 kHz.
+    """
+    pcm16 = np.frombuffer(pcm16_16k, dtype=np.int16)
+    pcm24 = np.repeat(pcm16, 3)[::2].astype(np.int16)
+    return base64.b64encode(pcm24.tobytes()).decode("ascii")
 
 
 class _BotSpeakingObserver(FrameProcessor):
@@ -86,19 +93,25 @@ async def run_voice_agent(
 
     realtime = OpenAIRealtimeLLMService(
         api_key=openai_api_key,
+        # no mic audio reaches the model until SAA opens the gate
+        start_audio_paused=True,
         settings=OpenAIRealtimeLLMService.Settings(
             model=model,
             system_instruction=system_prompt,
+            # disable OpenAI's server-side VAD/turn detection
+            session_properties=events.SessionProperties(
+                audio=events.AudioConfiguration(
+                    input=events.AudioInput(turn_detection=False),
+                ),
+            ),
         ),
     )
 
-    addressee_gate = _AddresseeGate()
     bot_speaking = _BotSpeakingObserver()
 
     pipeline = Pipeline(
         [
             transport.input(),
-            addressee_gate,
             realtime,
             bot_speaking,
             transport.output(),
@@ -110,9 +123,24 @@ async def run_voice_agent(
     engine.bind_task(task)
     bot_speaking.bind_engine(engine)
 
-    @engine.on_prediction
-    def _(p) -> None:
-        addressee_gate.suppressed = p.aligned_class == 1 and p.confidence > 0.7
+    @engine.on_turn_ready
+    async def _(ev) -> None:
+        # SAA finished a device-directed turn, we get the full utterance
+        if not ev.audio_pcm16:
+            return
+
+        audio_b64 = _turn_audio_to_24k_b64(ev.audio_pcm16)
+        logger.info("SAA turn_ready (%.1fs) — injecting turn + requesting response", ev.duration)
+        await realtime.send_client_event(
+            events.ConversationItemCreateEvent(
+                item=events.ConversationItem(
+                    type="message",
+                    role="user",
+                    content=[events.ItemContent(type="input_audio", audio=audio_b64)],
+                ),
+            )
+        )
+        await realtime.send_client_event(events.ResponseCreateEvent())
 
     @engine.on_interrupt
     async def _(ev) -> None:

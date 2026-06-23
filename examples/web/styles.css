@@ -12,6 +12,10 @@
   --col: var(--silent-col);
   --suggestion-col: var(--suggestion-silent-col);
   --cam-size: 140px;
+  /* Staged-warmup-card palette aliases (map ported names onto this theme) */
+  --warming: var(--device-col);
+  --muted: rgba(255,255,255,0.42);
+  --fg: #e8eae8;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -267,105 +271,83 @@ body {
   padding: 2rem;
 }
 
-.orb-wrap {
+/* Staged warmup card (replaces the orb visual). Visible only while
+   body.warming-up — i.e. connected but the SDK hasn't fired warmupComplete. */
+.warmup-panel {
+  display: none;
+  flex-direction: column;
+  gap: 1.4rem;
+  width: min(80%, 420px);
+}
+body.warming-up .warmup-panel { display: flex; }
+
+.warmup-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(2.4rem, 5vw, 4.2rem);
+  line-height: 0.96;
+  color: var(--fg);
+  margin-bottom: 0.4rem;
+}
+
+.warmup-bar {
+  position: relative; height: 2px; width: 100%; max-width: 380px;
+  background: #16262a; overflow: hidden;
+}
+.warmup-bar .bar-fill {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 0%;
+  background: var(--warming);
+  transition: width 0.4s linear;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--warming) 50%, transparent);
+}
+.warmup-pct {
+  font-family: 'DM Mono', monospace; font-size: 0.7rem;
+  letter-spacing: 0.2em; color: var(--muted);
+  margin-top: -0.2rem;
+}
+
+/* Warmup step list */
+.warm-steps { list-style: none; display: flex; flex-direction: column; gap: 0.7rem; }
+.warm-steps li {
+  display: grid; grid-template-columns: 20px 1fr auto; align-items: center;
+  gap: 0.8rem;
+  font-family: 'DM Mono', monospace; font-size: 0.78rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  transition: color 0.3s;
+}
+.warm-steps li .glyph {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 1.2px solid #16262a;
   position: relative;
-  width: min(55vw, 55vh);
-  height: min(55vw, 55vh);
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
-
-.orb-ring {
-  position: absolute;
-  inset: 0;
+.warm-steps li.done { color: var(--muted); }
+.warm-steps li.done .glyph {
+  background: var(--warming); border-color: var(--warming);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--warming) 45%, transparent);
+}
+.warm-steps li.done .glyph::after {
+  content: ""; position: absolute; inset: 3px;
+  background: var(--bg);
+  clip-path: polygon(15% 50%, 40% 75%, 85% 25%, 75% 15%, 40% 55%, 25% 40%);
+}
+.warm-steps li.active { color: var(--fg); }
+.warm-steps li.active .glyph {
+  border-color: var(--warming);
+  animation: glyph-spin 1s linear infinite;
+}
+.warm-steps li.active .glyph::before {
+  content: ""; position: absolute; inset: -1.2px;
   border-radius: 50%;
-  border: 1.5px solid var(--col);
-  opacity: 0.25;
-  transition: border-color 0.5s, opacity 0.5s;
-  animation: ring-breathe 3s ease-in-out infinite;
+  border: 1.2px solid transparent;
+  border-top-color: var(--warming);
 }
-.orb-ring-2 {
-  position: absolute;
-  inset: -18px;
-  border-radius: 50%;
-  border: 1px solid var(--col);
-  opacity: 0.1;
-  transition: border-color 0.5s;
-  animation: ring-breathe 3s ease-in-out infinite 0.4s;
+@keyframes glyph-spin { to { transform: rotate(360deg); } }
+.warm-steps li .pct {
+  font-size: 0.65rem; color: var(--muted); letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
 }
-.orb-ring-3 {
-  position: absolute;
-  inset: -38px;
-  border-radius: 50%;
-  border: 0.5px solid var(--col);
-  opacity: 0.06;
-  transition: border-color 0.5s;
-  animation: ring-breathe 3s ease-in-out infinite 0.8s;
-}
-@keyframes ring-breathe {
-  0%, 100% { transform: scale(1); opacity: 0.18; }
-  50%       { transform: scale(1.03); opacity: 0.28; }
-}
-
-.orb {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  background: radial-gradient(circle at 38% 35%, color-mix(in srgb, var(--col) 18%, transparent), transparent 65%),
-              radial-gradient(circle at 60% 65%, rgba(0,0,0,0.6), rgba(0,0,0,0));
-  border: 1.5px solid var(--col);
-  transition: border-color 0.5s, background 0.5s;
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.orb-inner-glow {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: radial-gradient(circle at center, color-mix(in srgb, var(--col) 8%, transparent) 0%, transparent 70%);
-  transition: background 0.5s;
-}
-.orb.active { animation: orb-pulse 1.8s ease-in-out infinite; }
-@keyframes orb-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--col) 20%, transparent); }
-  50%       { box-shadow: 0 0 60px 20px color-mix(in srgb, var(--col) 12%, transparent); }
-}
-.orb.warming { animation: orb-warm 2.4s ease-in-out infinite; }
-@keyframes orb-warm {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.04); }
-  50%       { box-shadow: 0 0 40px 6px rgba(255,255,255,0.06); }
-}
-
-.sound-bars {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  height: 48px;
-  opacity: 0;
-  transition: opacity 0.3s;
-}
-.sound-bars.visible { opacity: 1; }
-.sound-bar {
-  width: 4px;
-  border-radius: 2px;
-  background: var(--col);
-  transition: background 0.4s;
-  animation: bar-dance 0.6s ease-in-out infinite alternate;
-}
-.sound-bar:nth-child(1) { animation-delay: 0s;    animation-duration: 0.5s; }
-.sound-bar:nth-child(2) { animation-delay: 0.1s;  animation-duration: 0.7s; }
-.sound-bar:nth-child(3) { animation-delay: 0.05s; animation-duration: 0.4s; }
-.sound-bar:nth-child(4) { animation-delay: 0.15s; animation-duration: 0.6s; }
-.sound-bar:nth-child(5) { animation-delay: 0.08s; animation-duration: 0.5s; }
-
-@keyframes bar-dance {
-  from { height: 8px; }
-  to   { height: 44px; }
-}
+.warm-steps li.done .pct { color: var(--muted); }
 
 /* Cam thumbnail */
 .cam-wrap {
@@ -479,35 +461,6 @@ body.state-device { --col: var(--device-col); --suggestion-col: var(--device-col
 body.state-responding { --col: var(--responding-col); --suggestion-col: var(--responding-col); }
 body.state-silent { --col: var(--silent-col); --suggestion-col: var(--suggestion-silent-col); }
 
-/* Warmup state: orb gets a desaturated --col override + slight opacity drop.
-   Declared after the state-* rules so it wins source-order specificity. */
-body.warming-up { --col: var(--silent-col-warming); }
-body.warming-up .orb-wrap { opacity: 0.7; transition: opacity 0.5s ease; }
-
-/* Warmup progress bar: thin track under the orb, only visible while
-   body.warming-up. Fill width is driven from JS as predictions arrive. */
-.warmup-bar {
-  position: absolute;
-  left: 50%;
-  bottom: -2.5rem;
-  transform: translateX(-50%);
-  width: 180px;
-  height: 2px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 1px;
-  overflow: hidden;
-  opacity: 0;
-  transition: opacity 0.35s ease;
-  pointer-events: none;
-}
-body.warming-up .warmup-bar { opacity: 1; }
-.warmup-bar-fill {
-  height: 100%;
-  width: 0%;
-  background: var(--silent-col-warming);
-  transition: width 0.25s ease-out;
-}
-
 /* Vertical divider */
 .divider {
   position: fixed;
@@ -609,3 +562,42 @@ body.warming-up .warmup-bar { opacity: 1; }
   }
   .auth { width: calc(100vw - 2.4rem); }
 }
+
+/* Rolling prediction buffer (recent model outputs) */
+.pred-buffer-wrap { margin: 1.2rem 0 0; }
+.pred-buffer-title {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+.pred-buffer {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.pred-buffer li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 10px;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 7px;
+}
+.pred-buffer .chip { font-weight: 600; color: var(--muted); }
+.pred-buffer li[data-cls="1"] .chip { color: var(--human-col); }
+.pred-buffer li[data-cls="2"] .chip { color: var(--device-col); }
+.pred-buffer li[data-responding="true"] .chip { color: var(--responding-col); }
+.pred-buffer .buf-conf,
+.pred-buffer .buf-faces { color: var(--muted); }
+.pred-buffer .buf-raw { color: var(--muted); font-size: 0.62rem; margin-left: 6px; }

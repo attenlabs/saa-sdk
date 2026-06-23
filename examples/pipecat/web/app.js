@@ -225,7 +225,7 @@ function onAppMessage({ data, fromId }) {
       setStatus("warming up…");
       break;
     case "warmup_complete":
-      // native pivot: model produced its first real prediction
+      // native pivot: server signals warmup is complete
       setWarming(false);
       setStatus("live");
       break;
@@ -329,6 +329,10 @@ function b64ToBytes(b64) {
 
 const LABELS = { 0: "silent", 1: "human ↔ human", 2: "talking to me" };
 
+// rolling client-side log of recent predictions, newest first
+const predBuffer = [];
+const PRED_BUFFER_MAX = 12;
+
 // log only on transitions — predictions/VAD arrive every 250ms
 let _lastClass = null;
 let _lastResponding = null;
@@ -344,25 +348,31 @@ function setWarming(on) {
     el.dataset.responding = "false";
     document.getElementById("class-label").textContent = "warming up";
     document.getElementById("conf-fill").style.width = ""; // let the CSS sweep show
+    document.getElementById("conf-num").textContent = "—";
   } else {
     document.getElementById("class-label").textContent = "—";
     document.getElementById("conf-fill").style.width = "0%";
+    document.getElementById("conf-num").textContent = "0%";
   }
 }
 
 function renderPrediction(p) {
-  // first real prediction means inference is live — drop the warming state
   const el = document.getElementById("prediction");
-  if (el.dataset.warming === "true") setStatus("live");
-  el.dataset.warming = "false";
-  // prefer the canonical polished display_class; fall back to aligned_class
-  const cls = p.display_class ?? p.aligned_class;
+  // warming is cleared only by the warmup_complete message, not here
+  const warming = el.dataset.warming === "true";
+  // While warming, keep the "warming up" card and ignore the conf-0
+  // buffer-fill predictions until warmup_complete fires.
+  if (warming) return;
+  // prefer the canonical polished display_class; fall back to class
+  const cls = p.display_class ?? p.class;
   // native AI-responding flag; older servers signal it via source instead
   const responding = p.responding ?? p.source === "ai_responding";
   // during AI playback the class is gated to silent — surface "responding"
   const label = responding ? "responding" : (LABELS[cls] ?? "?");
   document.getElementById("class-label").textContent = label;
-  document.getElementById("conf-fill").style.width = `${(p.confidence * 100).toFixed(0)}%`;
+  const confPct = Math.round((p.confidence ?? 0) * 100);
+  document.getElementById("conf-fill").style.width = `${confPct}%`;
+  document.getElementById("conf-num").textContent = `${confPct}%`;
   document.getElementById("faces").textContent = `faces: ${p.num_faces}`;
   el.dataset.class = String(cls);
   el.dataset.responding = String(responding);
@@ -374,6 +384,42 @@ function renderPrediction(p) {
     _lastClass = cls;
     _lastResponding = responding;
   }
+  pushPredBuffer(p);
+}
+
+function pushPredBuffer(p) {
+  const cls = p.display_class ?? p.class;
+  const responding = p.responding ?? p.source === "ai_responding";
+  predBuffer.unshift({
+    cls,
+    raw: p.class,
+    conf: p.confidence ?? 0,
+    faces: p.num_faces,
+    responding,
+  });
+  predBuffer.length = Math.min(predBuffer.length, PRED_BUFFER_MAX);
+  renderPredBuffer();
+}
+
+function renderPredBuffer() {
+  const ul = document.getElementById("pred-buffer");
+  if (!ul) return;
+  ul.innerHTML = predBuffer
+    .map((r) => {
+      const label = r.responding ? "responding" : (LABELS[r.cls] ?? "?");
+      const raw =
+        !r.responding && r.raw != null && r.raw !== r.cls
+          ? `<span class="buf-raw">(raw ${r.raw})</span>`
+          : "";
+      return (
+        `<li data-cls="${r.cls}" data-responding="${r.responding}">` +
+        `<span class="chip">${label}${raw}</span>` +
+        `<span class="buf-conf">${Math.round(r.conf * 100)}%</span>` +
+        `<span class="buf-faces">faces: ${r.faces}</span>` +
+        `</li>`
+      );
+    })
+    .join("");
 }
 
 function renderVAD(v) {
@@ -422,6 +468,9 @@ async function stop() {
   pred.dataset.class = "0";
   document.getElementById("class-label").textContent = "--";
   document.getElementById("conf-fill").style.width = "0%";
+  document.getElementById("conf-num").textContent = "0%";
+  predBuffer.length = 0;
+  renderPredBuffer();
   // tear down any remote-audio elements we created for the voice agent
   document.querySelectorAll("audio[id^='remote-audio-']").forEach((el) => el.remove());
   console.log("[saa] disconnected");

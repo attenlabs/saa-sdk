@@ -1,9 +1,11 @@
-# SAA-gated realtime (speech-to-speech) voice agent for LiveKit Agents 1.5.x
-# OpenAI Realtime, gated by Attention Labs SAA — the case where stock LiveKit has
-# no VAD slot to gate on, so SAA is the only way to give a realtime model attention
+# SAA-driven realtime (speech-to-speech) voice agent for LiveKit Agents 1.5.x+
+# OpenAI Realtime with server VAD disabled; SAA is the turn-taker and injects each
+# device-directed turn into the model (push_audio -> commit_audio -> generate_reply)
 import asyncio
 import logging
 import os
+import time
+from logging.handlers import RotatingFileHandler
 
 from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli
 from livekit.agents.voice import room_io
@@ -14,6 +16,7 @@ from saa_livekit_client import (
     attention_agent_token,
     start_attention_session,
 )
+from saa_livekit_client.agents import inject_realtime_turn
 
 from pathlib import Path
 from dotenv import load_dotenv
@@ -22,6 +25,18 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 logger = logging.getLogger("voice-agent-realtime")
+
+# per-run log file at DEBUG; also captures livekit-agents + openai plugin internals
+_fh = RotatingFileHandler(f"saa-agent-{int(time.time())}.log", maxBytes=5_000_000, backupCount=3)
+_fh.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+_fh.setLevel(logging.DEBUG)
+for _name in ("voice-agent-realtime", "livekit", "saa_livekit_client"):
+    _lg = logging.getLogger(_name)
+    _lg.setLevel(logging.DEBUG)
+    _lg.addHandler(_fh)
+
+INTERJECTION_INSTRUCTIONS = "The user went quiet. Briefly check in or offer help based on what they were just discussing."
+FOLLOWUP_INSTRUCTIONS = "Respond to the user's reply. If they dismissed you, acknowledge briefly and stop."
 
 
 class Assistant(Agent):
@@ -55,12 +70,11 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     ctx.add_shutdown_callback(saa.stop)
 
-    # speech-to-speech — Silero is kept only as a sanity signal, the realtime
-    # model runs its own turn-taking
-    # swap openai.realtime for google.realtime to use Gemini Live (one-line change)
+    # speech-to-speech -> SAA is the turn-taker: server VAD off
     session = AgentSession(
-        llm=openai.realtime.RealtimeModel(voice="alloy"),
+        llm=openai.realtime.RealtimeModel(voice="alloy", turn_detection=None),
         vad=ctx.proc.userdata["vad"],
+        turn_detection="manual",
     )
 
     await session.start(
@@ -68,31 +82,57 @@ async def entrypoint(ctx: JobContext) -> None:
         room=ctx.room,
         room_options=room_io.RoomOptions(video_input=True),
     )
+    session.input.set_audio_enabled(False)  # model hears only SAA-injected turns
 
     engine = AttentionEngine(ctx.room, agent_identity=saa.agent_identity)
     ctx.add_shutdown_callback(engine.stop)
 
-    @engine.on_prediction
-    def _(p) -> None:
-        # gates audio before it reaches RealtimeModel.push_audio
-        session.input.set_audio_enabled(p.aligned_class == 2)
+    @engine.on_turn_ready
+    def _(ev) -> None:
+        logger.info("turn_ready dur=%.2f context=%s", ev.duration, ev.context)
+        instr = FOLLOWUP_INSTRUCTIONS if ev.context == "interjection_follow_up" else None
+        if not inject_realtime_turn(session, ev, instructions=instr):
+            logger.warning("no realtime session — dropped turn")
 
     @engine.on_interrupt
     def _(ev) -> None:
-        # for a realtime model this calls _rt_session.interrupt() for provider-side cancel
+        logger.info("interrupt conf=%.3f", ev.confidence)
         session.interrupt()
 
     @engine.on_interjection
-    async def _(ev) -> None:
-        await session.generate_reply(instructions="Briefly check if the user needs anything")
+    def _(ev) -> None:
+        logger.info("interjection reason=%s", ev.reason)
+        if not inject_realtime_turn(session, ev, instructions=INTERJECTION_INSTRUCTIONS):
+            logger.warning("no realtime session — dropped interjection")
 
     # tell SAA when our agent is speaking — arms interrupt, suppresses interjection
     @session.on("agent_state_changed")
     def _(ev) -> None:
+        logger.info("agent_state %s->%s", ev.old_state, ev.new_state)
         if ev.new_state == "speaking":
             asyncio.create_task(engine.responding_start())
         elif ev.old_state == "speaking":
             asyncio.create_task(engine.responding_stop())
+
+    @session.on("user_state_changed")
+    def _(ev) -> None:
+        logger.info("user_state %s->%s", ev.old_state, ev.new_state)
+
+    @session.on("user_input_transcribed")
+    def _(ev) -> None:
+        logger.info("transcribed final=%s %r", ev.is_final, ev.transcript)
+
+    @session.on("conversation_item_added")
+    def _(ev) -> None:
+        logger.info("item_added role=%s", getattr(ev.item, "role", "?"))
+
+    @session.on("speech_created")
+    def _(ev) -> None:
+        logger.info("speech_created source=%s", ev.source)
+
+    @session.on("error")
+    def _(ev) -> None:
+        logger.error("session error src=%s err=%r", type(ev.source).__name__, ev.error)
 
     await engine.start()
     logger.info("SAA gating active (agent=%s)", saa.agent_identity)

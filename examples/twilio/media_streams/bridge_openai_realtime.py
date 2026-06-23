@@ -86,6 +86,14 @@ SAA_INPUT_SAMPLE_RATE = 16_000        # what SAA hands us
 ADAPTIVE_THRESHOLD_LOW = 0.65
 ADAPTIVE_THRESHOLD_HIGH = 0.82
 
+# Reconnect/backoff policy for the Realtime WebSocket. OpenAI can drop the
+# socket mid-call (idle, transient 5xx) or refuse a fresh connect with 429
+# (rate limit) / 529 (overloaded). Rather than fail the whole phone call on
+# the first hiccup we retry the connect with capped exponential backoff.
+RECONNECT_MAX_ATTEMPTS = int(os.environ.get("OPENAI_REALTIME_RECONNECT_ATTEMPTS", "5"))
+RECONNECT_BASE_DELAY = float(os.environ.get("OPENAI_REALTIME_RECONNECT_BASE_DELAY", "0.5"))
+RECONNECT_MAX_DELAY = float(os.environ.get("OPENAI_REALTIME_RECONNECT_MAX_DELAY", "8.0"))
+
 
 @dataclass
 class _RealtimeSessionState:
@@ -93,6 +101,27 @@ class _RealtimeSessionState:
 
     response_in_flight: Optional[str] = None
     cancellations: int = 0
+    reconnects: int = 0
+
+
+def _connect_status_code(exc: BaseException) -> Optional[int]:
+    """Best-effort HTTP status from a websockets connect failure.
+
+    ``websockets`` raises ``InvalidStatusCode`` (v<13) or ``InvalidStatus``
+    (v>=13) when the server rejects the upgrade with an HTTP error; the
+    status lives on different attributes across versions. Pull it out
+    without importing version-specific exception classes so connect-time
+    429/529 can be retried while auth (401/403) and bad-model (404) fail
+    fast.
+    """
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        resp = getattr(exc, "response", None)
+        status = getattr(resp, "status_code", None) or getattr(resp, "status", None)
+    try:
+        return int(status) if status is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 class OpenAIRealtimeBridge:
@@ -165,51 +194,93 @@ class OpenAIRealtimeBridge:
 
         self._ctx = ctx
         self._session = session
-        url = OPENAI_REALTIME_URL.format(model=self.model)
-        log.info(
-            "[openai-realtime] connecting model=%s voice=%s for call=%s",
-            self.model, self.voice, ctx.call_sid,
-        )
-        # the realtime variant, not Chat Completions.
-        from websockets.client import connect as ws_connect
-        self._ws = await ws_connect(
-            url,
-            extra_headers={
-                "Authorization": f"Bearer {self.api_key}",
-            },
-            max_size=16 * 1024 * 1024,
-            ping_interval=20,
-            ping_timeout=20,
-            close_timeout=2,
-        )
-        # Configure the Realtime session up front. server_vad is
-        # intentionally disabled, SAA is the gate, not Realtime's VAD.
-        # NOTE: The gpt-realtime-2 API requires nested audio config and
-        # a minimum sample rate of 24000 Hz. Voice is under audio.output.
-        # SAA delivers 16 kHz; on_speech() upsamples 16k->24k before send.
-        await self._send_json({
-            "type": "session.update",
-            "session": {
-                "type": "realtime",  # required by gpt-realtime-2
-                "instructions": self.system_prompt,
-                "audio": {
-                    "input": {
-                        "format": {"type": "audio/pcm", "rate": 24000},
-                        "transcription": {"model": "whisper-1"},
-                        "turn_detection": None,  # SAA owns endpointing
-                    },
-                    "output": {
-                        "format": {"type": "audio/pcm", "rate": 24000},
-                        "voice": self.voice,
-                    },
-                },
-                "tools": self.tools,
-                "tool_choice": "auto" if self.tools else "none",
-            },
-        })
+        await self._connect_with_backoff()
         self._reader_task = asyncio.create_task(
             self._read_realtime(), name=f"oai-rt-{ctx.stream_sid}",
         )
+
+    async def _connect_with_backoff(self) -> None:
+        """Open the Realtime socket, retrying connect-time 429/529 with backoff.
+
+        429 (rate limit) and 529 (overloaded) are transient: OpenAI is asking
+        us to come back shortly, not telling us the request is malformed. We
+        retry with capped exponential backoff up to ``RECONNECT_MAX_ATTEMPTS``.
+        Any other connect failure (auth, bad model) is raised on the first
+        attempt, retrying those just delays a call that can never succeed.
+        Once connected we (re)send the session.update so a reconnect lands in
+        the same configured state.
+        """
+        url = OPENAI_REALTIME_URL.format(model=self.model)
+        # the realtime variant, not Chat Completions.
+        from websockets.client import connect as ws_connect
+
+        delay = RECONNECT_BASE_DELAY
+        last_exc: Optional[BaseException] = None
+        for attempt in range(1, RECONNECT_MAX_ATTEMPTS + 1):
+            if self._closing:
+                return
+            log.info(
+                "[openai-realtime] connecting model=%s voice=%s for call=%s (attempt %d/%d)",
+                self.model, self.voice,
+                self._ctx.call_sid if self._ctx else "?",
+                attempt, RECONNECT_MAX_ATTEMPTS,
+            )
+            try:
+                self._ws = await ws_connect(
+                    url,
+                    extra_headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                    },
+                    max_size=16 * 1024 * 1024,
+                    ping_interval=20,
+                    ping_timeout=20,
+                    close_timeout=2,
+                )
+            except Exception as exc:  # noqa: BLE001
+                status = _connect_status_code(exc)
+                if status in (429, 529) and attempt < RECONNECT_MAX_ATTEMPTS:
+                    last_exc = exc
+                    log.warning(
+                        "[openai-realtime] connect got %d (transient), "
+                        "backing off %.2fs then retrying",
+                        status, delay,
+                    )
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, RECONNECT_MAX_DELAY)
+                    continue
+                # Non-transient (auth/model) or out of attempts: give up.
+                raise
+            # Connected. Push the session config up front. server_vad is
+            # intentionally disabled, SAA is the gate, not Realtime's VAD.
+            # NOTE: The gpt-realtime-2 API requires nested audio config and
+            # a minimum sample rate of 24000 Hz. Voice is under audio.output.
+            # SAA delivers 16 kHz; on_speech() upsamples 16k->24k before send.
+            await self._send_json({
+                "type": "session.update",
+                "session": {
+                    "type": "realtime",  # required by gpt-realtime-2
+                    "instructions": self.system_prompt,
+                    "audio": {
+                        "input": {
+                            "format": {"type": "audio/pcm", "rate": 24000},
+                            "transcription": {"model": "whisper-1"},
+                            "turn_detection": None,  # SAA owns endpointing
+                        },
+                        "output": {
+                            "format": {"type": "audio/pcm", "rate": 24000},
+                            "voice": self.voice,
+                        },
+                    },
+                    "tools": self.tools,
+                    "tool_choice": "auto" if self.tools else "none",
+                },
+            })
+            return
+        # Exhausted attempts on a transient status.
+        raise RuntimeError(
+            "OpenAIRealtimeBridge: could not connect to Realtime after "
+            f"{RECONNECT_MAX_ATTEMPTS} attempts"
+        ) from last_exc
 
     async def close(self) -> None:
         self._closing = True
@@ -227,9 +298,10 @@ class OpenAIRealtimeBridge:
             except Exception:  # noqa: BLE001
                 pass
         log.info(
-            "[openai-realtime] call closed: call=%s cancellations=%d",
+            "[openai-realtime] call closed: call=%s cancellations=%d reconnects=%d",
             self._ctx.call_sid if self._ctx else "?",
             self._state.cancellations,
+            self._state.reconnects,
         )
 
     # ── SAA -> Realtime ─────────────────────────────────────
@@ -364,64 +436,101 @@ class OpenAIRealtimeBridge:
     # ── Realtime -> SAA / Twilio ───────────────────────────────
 
     async def _read_realtime(self) -> None:
-        """Consume Realtime server events and forward TTS audio back to Twilio.
+        """Consume Realtime events, reconnecting with backoff on a mid-call drop.
 
-        Realtime streams ``response.output_audio.delta`` events containing
-        base64-encoded PCM16. We decode and enqueue each delta on the
-        adapter's outbound queue, the paced sender takes it from there.
-        ``response.done`` / ``response.cancelled`` clear our
-        ``response_in_flight`` marker so the next turn can fire.
+        Each call to :meth:`_read_one_socket` drains the current socket until
+        it closes. If the close was unexpected (the call is still live, we're
+        not tearing down) we reconnect with capped exponential backoff and
+        resume reading on the fresh socket so a transient OpenAI disconnect
+        doesn't kill the phone call. A clean close (or ``close()`` flipping
+        ``_closing``) ends the loop.
         """
-        try:
-            async for raw in self._ws:
-                try:
-                    msg = json.loads(raw)
-                except (TypeError, ValueError):
-                    continue
-                etype = msg.get("type")
-                if etype == "response.created":
-                    self._state.response_in_flight = (msg.get("response") or {}).get("id")
-                elif etype == "response.output_audio.delta":
-                    # gpt-realtime-2 uses response.output_audio.delta
-                    # (older preview used response.audio.delta)
-                    audio_b64 = msg.get("delta") or ""
-                    if audio_b64:
-                        try:
-                            chunk = base64.b64decode(audio_b64)
-                        except Exception:  # noqa: BLE001
-                            continue
-                        if chunk:
-                            # OpenAI streams 24 kHz PCM16; the outbound path expects 16 kHz (then ->
-                            # Twilio 8 kHz). Resample 24k->16k here, else playback is 1.5x slow / low.
-                            _p24 = np.frombuffer(chunk, dtype=np.int16)
-                            _n16 = (_p24.size * 2) // 3
-                            if _n16:
-                                _p16 = np.interp(np.arange(_n16) * 1.5, np.arange(_p24.size),
-                                                 _p24.astype(np.float32)).astype(np.int16)
-                                await self.outbound_pcm16_16k.put(_p16.tobytes())
-                elif etype in ("response.output_audio_transcript.delta",
-                               "response.audio_transcript.delta"):
-                    # Optional: stream the agent's transcript somewhere.
-                    pass
-                elif etype in ("response.done", "response.cancelled"):
-                    self._state.response_in_flight = None
-                    # Drop responding back to False at the seam between
-                    # turns so SAA reopens predictions cleanly. The
-                    # adapter's tail timer would also handle this, but
-                    # being explicit avoids relying on it.
-                    if self._session is not None:
-                        await self._session.mark_responding(False)
-                elif etype == "error":
-                    err = (msg.get("error") or {})
-                    log.warning(
-                        "[openai-realtime] error: %s: %s",
-                        err.get("code", "?"), err.get("message", "?"),
-                    )
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # noqa: BLE001
-            if not self._closing:
-                log.exception("[openai-realtime] reader crashed")
+        delay = RECONNECT_BASE_DELAY
+        while not self._closing:
+            try:
+                await self._read_one_socket()
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001
+                if self._closing:
+                    return
+                log.warning("[openai-realtime] reader socket dropped", exc_info=True)
+            if self._closing:
+                return
+            # Socket ended while the call is still live: reconnect.
+            if self._state.reconnects >= RECONNECT_MAX_ATTEMPTS:
+                log.error(
+                    "[openai-realtime] giving up after %d reconnect attempts",
+                    self._state.reconnects,
+                )
+                return
+            self._state.reconnects += 1
+            log.warning(
+                "[openai-realtime] realtime socket lost mid-call, "
+                "reconnecting in %.2fs (attempt %d)",
+                delay, self._state.reconnects,
+            )
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, RECONNECT_MAX_DELAY)
+            try:
+                await self._connect_with_backoff()
+            except Exception:  # noqa: BLE001
+                if not self._closing:
+                    log.exception("[openai-realtime] reconnect failed")
+                return
+
+    async def _read_one_socket(self) -> None:
+        """Drain the current Realtime socket until it closes.
+
+        Returns normally when the ``async for`` exhausts (socket closed);
+        the caller decides whether to reconnect.
+        """
+        if self._ws is None:
+            return
+        async for raw in self._ws:
+            try:
+                msg = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            etype = msg.get("type")
+            if etype == "response.created":
+                self._state.response_in_flight = (msg.get("response") or {}).get("id")
+            elif etype == "response.output_audio.delta":
+                # gpt-realtime-2 uses response.output_audio.delta
+                # (older preview used response.audio.delta)
+                audio_b64 = msg.get("delta") or ""
+                if audio_b64:
+                    try:
+                        chunk = base64.b64decode(audio_b64)
+                    except Exception:  # noqa: BLE001
+                        continue
+                    if chunk:
+                        # OpenAI streams 24 kHz PCM16; the outbound path expects 16 kHz (then ->
+                        # Twilio 8 kHz). Resample 24k->16k here, else playback is 1.5x slow / low.
+                        _p24 = np.frombuffer(chunk, dtype=np.int16)
+                        _n16 = (_p24.size * 2) // 3
+                        if _n16:
+                            _p16 = np.interp(np.arange(_n16) * 1.5, np.arange(_p24.size),
+                                             _p24.astype(np.float32)).astype(np.int16)
+                            await self.outbound_pcm16_16k.put(_p16.tobytes())
+            elif etype in ("response.output_audio_transcript.delta",
+                           "response.audio_transcript.delta"):
+                # Optional: stream the agent's transcript somewhere.
+                pass
+            elif etype in ("response.done", "response.cancelled"):
+                self._state.response_in_flight = None
+                # Drop responding back to False at the seam between
+                # turns so SAA reopens predictions cleanly. The
+                # adapter's tail timer would also handle this, but
+                # being explicit avoids relying on it.
+                if self._session is not None:
+                    await self._session.mark_responding(False)
+            elif etype == "error":
+                err = (msg.get("error") or {})
+                log.warning(
+                    "[openai-realtime] error: %s: %s",
+                    err.get("code", "?"), err.get("message", "?"),
+                )
 
     async def _cancel_response_if_any(self) -> None:
         if not self._state.response_in_flight or self._ws is None:
