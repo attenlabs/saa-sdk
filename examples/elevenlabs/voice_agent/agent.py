@@ -1,13 +1,15 @@
-# SAA-gated ElevenLabs Conversational AI agent — debug/logging build.
+# SAA-gated ElevenLabs Conversational AI agent
 #
-# ElevenLabs always gets a continuous 16 kHz stream: the user's real mic audio
-# while SAA says it's device-directed (held open briefly so a pause doesn't chop
-# it and so ElevenLabs can endpoint), and silence otherwise — so the agent never
-# answers side conversations, while its own VAD still endpoints and replies.
-# While muted it also pings ElevenLabs' reset-turn-timeout so the agent doesn't re-prompt
+# SAA owns the turn boundary. ElevenLabs gets the user's real mic audio only while
+# SAA says it's device-directed; on SAA's on_turn_ready a short silence tail is sent
+# to trigger ElevenLabs' endpoint, and nothing is sent between turns. No continuous
+# silence stream, so the keepalive can no longer race/cancel the endpoint.
+# Needs ElevenLabs turn-taking enabled — the silence tail is the only reply trigger.
 # Logs prediction / responding / send state so the gating can be observed (no TUI).
+import argparse
 import logging
 import os
+import sys
 import threading
 import time
 from pathlib import Path
@@ -19,6 +21,10 @@ from elevenlabs.conversational_ai.default_audio_interface import DefaultAudioInt
 
 from saa import AttentionClient
 
+# import the shared SessionLog helper as a sibling module under examples/_shared
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_shared"))
+from session_log import SessionLog  # noqa: E402
+
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 log = logging.getLogger("elevenlabs-saa")
@@ -28,8 +34,9 @@ OUTPUT_BYTES_PER_SEC = 16000 * 2
 
 
 class SAAFeedAudioInterface(AudioInterface):
-    """Tees the mic into SAA and feeds ElevenLabs a continuous stream: real audio
-    while device-directed, silence otherwise.
+    """Tees the mic into SAA and feeds ElevenLabs the user's real audio only while
+    device-directed; on on_turn_ready it sends a silence tail to endpoint, and
+    nothing between turns (Option B).
 
     - Gate opens on class-2 (device-directed) and closes at once on class-1
       (human-directed). A class-0 (silence) dip is debounced for
@@ -40,15 +47,20 @@ class SAAFeedAudioInterface(AudioInterface):
       thread, so output()-idle would flip responding off mid-playback and the
       agent's echo (no AEC) would leak back as user audio.
 
-    - While the gate is shut, a keepalive ping (`bind_keepalive`) resets ElevenLabs'
-      turn timer so its no-input timeout never re-prompts during silence/side-talk.
-      turn_timeout caps at 30s and isn't per-session overridable, so the reset
-      event is the only way to hold the turn open indefinitely. 
+    - `endpoint()` (called on on_turn_ready) sends `endpoint_silence_ms` of zeros so
+      ElevenLabs' VAD endpoints the turn now, at SAA's boundary. `_awaiting_reply`
+      marks the window between that tail and the agent's first audio; the keepalive
+      is suppressed there so a ping can never cancel the endpoint.
+
+    - The keepalive ping (`bind_keepalive`) resets ElevenLabs' turn timer so its
+      no-input timeout never re-prompts during long idle. It now fires only when
+      idle and not awaiting a reply, so it can never coincide with an endpoint.
     """
 
     def __init__(self, base: AudioInterface, saa: AttentionClient, *,
                  close_debounce_ticks: int = 4, responding_tail_ms: int = 300,
-                 keepalive_s: float = 5.0):
+                 keepalive_s: float = 5.0, endpoint_silence_ms: int = 600,
+                 awaiting_timeout_ms: int = 4000):
         self._base = base
         self._saa = saa
         self._close_debounce = close_debounce_ticks
@@ -59,7 +71,11 @@ class SAAFeedAudioInterface(AudioInterface):
         self._tail_s = responding_tail_ms / 1000.0
         self._responding = False
         self._play_until = 0.0          # monotonic deadline: agent audio plays until here
-        self._sending_real = False      # last send state (real vs silence) for transition logs
+        self._sending_real = False      # last send state (real vs off) for transition logs
+        self._endpoint_silence_s = endpoint_silence_ms / 1000.0
+        self._awaiting_reply = False    # tail sent, agent reply not yet started
+        self._awaiting_since = 0.0
+        self._awaiting_timeout_s = awaiting_timeout_ms / 1000.0
         self._keepalive_s = keepalive_s # ping period to reset ElevenLabs' turn timer
         self._keepalive_cb = None       # set by bind_keepalive once the session is live
         self._last_keepalive = 0.0
@@ -128,6 +144,7 @@ class SAAFeedAudioInterface(AudioInterface):
         with self._lock:
             # extend playback deadline by this chunk's duration (queue draining)
             self._play_until = max(self._play_until, now) + len(audio) / OUTPUT_BYTES_PER_SEC
+            self._awaiting_reply = False   # reply started
             if not self._responding:
                 self._responding = True
                 first = True
@@ -140,7 +157,19 @@ class SAAFeedAudioInterface(AudioInterface):
         self._base.interrupt()          # clears the playback queue immediately
         with self._lock:
             self._play_until = time.monotonic()
+            self._awaiting_reply = False
         self._set_responding(False, "interrupt")
+
+    def endpoint(self) -> None:
+        # SAA reported the turn is done — feed a short silence tail so ElevenLabs
+        # endpoints now, then mark the awaiting-reply window (keepalive suppressed).
+        if self._user_cb is None or self._responding:
+            return
+        n = int(self._endpoint_silence_s * 16000) * 2
+        self._awaiting_reply = True
+        self._awaiting_since = time.monotonic()
+        log.info("ENDPOINT — %dms silence tail", int(self._endpoint_silence_s * 1000))
+        self._user_cb(bytes(n))
 
     # ── internals ─────────────────────────────────────────────────────────
     def _tee(self, audio: bytes):
@@ -151,18 +180,16 @@ class SAAFeedAudioInterface(AudioInterface):
             log.exception("feed_audio failed")
         if self._user_cb is None:
             return  # priming: SAA only, ElevenLabs not connected yet
-        # continuous stream to ElevenLabs: real audio only when device-directed
-        # and the agent isn't speaking; silence otherwise (so it never hears side
-        # talk or its own echo, but its VAD still gets a clean speech→silence edge).
+        # send real audio only while device-directed and the agent isn't speaking;
+        # nothing otherwise. the endpoint tail comes from endpoint(), not here.
         send_real = self._gate_open and not self._responding
         if send_real != self._sending_real:
             self._sending_real = send_real
             log.info("SEND %s  (gate=%s resp=%s)",
-                     "real " if send_real else "muted", self._gate_open, self._responding)
+                     "real" if send_real else "off", self._gate_open, self._responding)
         if send_real:
-            # defer the keepalive to send
             self._last_keepalive = time.monotonic()
-        self._user_cb(audio if send_real else bytes(len(audio)))
+            self._user_cb(audio)
 
     def _set_responding(self, value: bool, reason: str):
         fire = False
@@ -182,8 +209,12 @@ class SAAFeedAudioInterface(AudioInterface):
                 done = (self._responding and now >= self._play_until + self._tail_s)
             if done:
                 self._set_responding(False, "playback-done")
-            # hold ElevenLabs' turn open while muted so it doesn't re-prompt on silence
+            # drop a stale awaiting-reply window if ElevenLabs never replied
+            if self._awaiting_reply and now - self._awaiting_since >= self._awaiting_timeout_s:
+                self._awaiting_reply = False
+            # hold ElevenLabs' turn open during idle; never while awaiting an endpoint
             if (self._keepalive_cb and not self._gate_open and not self._responding
+                    and not self._awaiting_reply
                     and now - self._last_keepalive >= self._keepalive_s):
                 self._last_keepalive = now
                 try:
@@ -193,31 +224,64 @@ class SAAFeedAudioInterface(AudioInterface):
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="SAA-gated ElevenLabs agent")
+    parser.add_argument("--session-log", action="store_true",
+                        help="write a per-session artifact dir (events.jsonl + saa.log + meta.json)")
+    parser.add_argument("--artifact-dir", default=None,
+                        help="base dir for session logs (implies --session-log)")
+    args = parser.parse_args()
+
+    # opt-in: SAA_SESSION_LOG=1 env, or --session-log / --artifact-dir CLI
+    log_enabled = (args.session_log or os.environ.get("SAA_SESSION_LOG") == "1"
+                   or args.artifact_dir is not None)
+    slog = None
+    if log_enabled:
+        try:
+            slog = SessionLog(args.artifact_dir or "./sessions")
+            slog.attach_logging()
+            log.info("session log -> %s", slog.dir)
+        except Exception as e:
+            log.warning("session log disabled: %s", e)
+            slog = None
+
+    def tee(name, payload=None):
+        # mirror an SDK callback into events.jsonl when the session log is active
+        if slog is not None:
+            slog.append_event(name, payload)
+
     saa_api_key = os.environ.get("SAA_API_KEY")
     api_key = os.environ.get("ELEVENLABS_API_KEY")
     agent_id = os.environ.get("ELEVENLABS_AGENT_ID")
     if not (saa_api_key and api_key and agent_id):
         print("set SAA_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_AGENT_ID")
+        if slog is not None:
+            slog.finalize("config_error")
         return 2
 
     # class-2 (device-directed) confidence threshold: higher = stricter gate.
     # Set at startup here; change live anytime with saa.set_threshold(v).
     threshold = float(os.environ.get("SAA_CLASS2_THRESHOLD", "0.7"))
 
+    # keep auto_reconnect at the SDK default (True)
     saa = AttentionClient(token=saa_api_key, enable_audio=False, enable_video=False,
                           initial_threshold=threshold)
     attn = SAAFeedAudioInterface(DefaultAudioInterface(), saa)
+    if slog is not None:
+        slog.write_meta({"threshold": threshold, "agent_id": agent_id})
 
     warmed = threading.Event()
+    state = {"disconnected": False}  # tracks exit cause for finalize
 
     @saa.on_warmup_complete
     def _():
         log.info("WARMUP complete — SAA predicting")
+        tee("warmup_complete")
         warmed.set()
 
     @saa.on_config
     def _(ev):
         log.info("CONFIG class2_threshold=%.2f", ev.model_class2_threshold)
+        tee("config", ev)
 
     @saa.on_prediction
     def _(ev):
@@ -229,14 +293,43 @@ def main() -> int:
                  "real" if (gate and not resp) else "muted")
         if ev.cls == 2 and resp:
             log.info("  ^ cls=2 while agent SPEAKING (echo?) — muted")
+        tee("prediction", ev)
+
+    @saa.on_turn_ready
+    def _(ev):
+        # SAA's authoritative turn boundary — trigger ElevenLabs' endpoint
+        log.info("SAA turn_ready dur=%.1fs", ev.duration_sec)
+        attn.endpoint()
+        tee("turn_ready", {"duration_sec": ev.duration_sec})
 
     @saa.on_interrupt
     def _(ev):
         log.info("SAA interrupt conf=%.2f", ev.confidence)
+        tee("interrupt", ev)
 
     @saa.on_error
     def _(ev):
         log.warning("SAA error: %s — %s", ev.title, ev.message)
+        tee("error", ev)
+
+    @saa.on_disconnected
+    def _(ev):
+        # distinct, fatal-looking line — separate from the recurring stall noise
+        log.error("SAA DISCONNECTED code=%s reason=%s clean=%s",
+                  ev.code, ev.reason or "none", ev.was_clean)
+        state["disconnected"] = not ev.was_clean
+        tee("disconnected", ev)
+
+    @saa.on_reconnecting
+    def _(ev):
+        log.warning("SAA reconnecting attempt=%d in %.1fs (last_code=%s)",
+                    ev.attempt, ev.delay_s, ev.last_code)
+        tee("reconnecting", ev)
+
+    @saa.on_reconnected
+    def _(ev):
+        log.info("SAA reconnected after %d attempt(s)", ev.attempts)
+        tee("reconnected", ev)
 
     conversation = Conversation(
         client=ElevenLabs(api_key=api_key),
@@ -257,13 +350,22 @@ def main() -> int:
     conversation.start_session()
     attn.bind_keepalive(conversation.register_user_activity)
     log.info("session started — Ctrl+C to end")
+    exit_cause = "normal"
     try:
         conversation.wait_for_session_end()
     except KeyboardInterrupt:
         pass
+    except Exception:
+        exit_cause = "exception"
+        log.exception("session ended with exception")
+        raise
     finally:
+        if exit_cause == "normal" and state["disconnected"]:
+            exit_cause = "disconnected"
         conversation.end_session()
         saa.stop()
+        if slog is not None:
+            slog.finalize(exit_cause)
     return 0
 
 
