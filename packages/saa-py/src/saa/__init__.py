@@ -12,6 +12,8 @@ from .events import (
     InterjectionEvent,
     InterruptEvent,
     PredictionEvent,
+    ReconnectedEvent,
+    ReconnectingEvent,
     StateEvent,
     StatsEvent,
     TurnFrame,
@@ -34,7 +36,9 @@ __all__ = [
     "InterjectionEvent",
     "AttentionErrorEvent",
     "DisconnectedEvent",
+    "ReconnectingEvent",
+    "ReconnectedEvent",
     "ConversationState",
 ]
 
-__version__ = "0.6.1"
+__version__ = "0.7.0"

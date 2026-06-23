@@ -102,7 +102,9 @@ class AttentionErrorEvent:
     title: str
     message: str
     detail: Optional[str] = None
-    code: Optional[int] = None
+    code: Optional[int] = None  # numeric WS close code when applicable
+    kind: Optional[str] = None  # transport | auth | rate_limit | audio | server | environment
+    retriable: bool = False
 
 
 @dataclass
@@ -110,3 +112,15 @@ class DisconnectedEvent:
     code: int
     reason: str
     was_clean: bool
+
+
+@dataclass
+class ReconnectingEvent:
+    attempt: int      # 1-based attempt counter
+    delay_s: float    # backoff before this attempt
+    last_code: int    # close code that triggered the reconnect
+
+
+@dataclass
+class ReconnectedEvent:
+    attempts: int     # attempts it took to reconnect

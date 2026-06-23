@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import random
 import threading
 import time
 import urllib.error
@@ -29,6 +30,8 @@ from .events import (
     InterjectionEvent,
     InterruptEvent,
     PredictionEvent,
+    ReconnectedEvent,
+    ReconnectingEvent,
     StateEvent,
     StatsEvent,
     TurnFrame,
@@ -45,6 +48,11 @@ WS_PING_INTERVAL_S = 5.0
 WS_PONG_TIMEOUT_S = 15.0
 WS_STATS_INTERVAL_S = 10.0
 WS_HANDSHAKE_TIMEOUT_S = 10.0
+
+RECONNECT_BASE_S = 0.5
+RECONNECT_CAP_S = 20.0
+# Close codes we never reconnect on (auth/protocol/policy — retrying won't help).
+FATAL_CLOSE_CODES = frozenset({1000, 1002, 1003, 1007, 1008, 1009, 1010, 1015})
 
 logger = logging.getLogger("saa")
 
@@ -80,6 +88,7 @@ class AttentionClient:
         enable_audio: bool = True,
         enable_video: bool = True,
         server_profile: Optional[str] = None,
+        auto_reconnect: bool = True,
     ):
         self.url = url or DEFAULT_SERVER_URL
         self.token = token
@@ -88,6 +97,7 @@ class AttentionClient:
         self.enable_audio = enable_audio
         self.enable_video = enable_video
         self.server_profile = server_profile
+        self.auto_reconnect = auto_reconnect
         self.threshold = _clamp01(initial_threshold)
 
         self._listeners: dict[str, list[Listener]] = {}
@@ -95,12 +105,25 @@ class AttentionClient:
         self._ws_thread: Optional[threading.Thread] = None
         self._ws_open = threading.Event()
         self._ws_closed = threading.Event()
+
+        self._handshake_done = threading.Event()
         self._close_info: dict = {}
         self._mic: Optional[MicCapture] = None
         self._cam: Optional[CameraCapture] = None
         self._stats_thread: Optional[threading.Thread] = None
         self._stats_stop = threading.Event()
+        self._stall_emitted = False
         self._started = False
+
+        # reconnect state
+        self._stopping = False
+        self._reconnecting = False
+        self._reconnect_stop = threading.Event()
+        self._reconnect_thread: Optional[threading.Thread] = None
+
+        # resolved ws url + derived http origin (for the client_log fallback)
+        self._resolved_ws_url: Optional[str] = None
+        self._log_origin: Optional[str] = None
 
         # External-feed mode (enable_audio=False + feed_audio()): re-chunks
         # arbitrary-sized fed audio into the same 100 ms blocks the mic path
@@ -132,6 +155,8 @@ class AttentionClient:
     def on_interjection(self, func: Listener) -> Listener: return self._register("interjection", func)
     def on_error(self, func: Listener) -> Listener: return self._register("error", func)
     def on_disconnected(self, func: Listener) -> Listener: return self._register("disconnected", func)
+    def on_reconnecting(self, func: Listener) -> Listener: return self._register("reconnecting", func)
+    def on_reconnected(self, func: Listener) -> Listener: return self._register("reconnected", func)
 
     def _register(self, event: str, func: Listener) -> Listener:
         self._listeners.setdefault(event, []).append(func)
@@ -150,6 +175,9 @@ class AttentionClient:
         if self._started:
             raise RuntimeError("AttentionClient already started")
         self._started = True
+        self._stopping = False
+        self._reconnecting = False
+        self._reconnect_stop.clear()
         try:
             self._open_ws_blocking()
             if self.enable_audio:
@@ -170,6 +198,20 @@ class AttentionClient:
     def stop(self) -> None:
         if not self._started:
             return
+
+        # Set _stopping FIRST so any in-flight reconnect loop bails before
+        # spawning a fresh socket, then interrupt its backoff sleep. Close any
+        # in-flight ws so a mid-handshake attempt returns immediately, then join.
+        self._stopping = True
+        self._reconnect_stop.set()
+        if self._reconnect_thread is not None:
+            if self._ws is not None:
+                try:
+                    self._ws.close()
+                except Exception:
+                    pass
+            self._reconnect_thread.join(timeout=WS_HANDSHAKE_TIMEOUT_S + 1.0)
+            self._reconnect_thread = None
 
         self._stats_stop.set()
         if self._stats_thread is not None:
@@ -196,6 +238,7 @@ class AttentionClient:
         self._started = False
         self._warmed_up = False
         self._muted = False
+        self._reconnecting = False
         with self._feed_lock:
             self._feed_buffer = np.zeros(0, dtype=np.float32)
 
@@ -222,6 +265,40 @@ class AttentionClient:
         value = _clamp01(value)
         self.threshold = value
         self._send_control({"action": "set_threshold", "value": value})
+
+    def send_client_log(self, entries: list) -> bool:
+        """Ship a batch of client log entries to the server.
+
+        When the WS is open, sends a ``client_log`` control frame. When it's
+        closed (e.g. mid-reconnect), POSTs best-effort to the resolved origin's
+        ``/client_log`` on a daemon thread — fire-and-forget, never blocks or
+        raises. Returns True if dispatched (WS path) or queued (beacon path).
+        """
+        if not entries:
+            return True  # nothing to ship, treated as success
+        if self._send_control({"action": "client_log", "entries": entries}):
+            return True
+        return self._beacon_client_log(entries)
+
+    def _beacon_client_log(self, entries: list) -> bool:
+        origin = self._log_origin
+        if not origin:
+            return False
+        url = origin + "/client_log"
+        body = json.dumps({"entries": entries}).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+
+        def _post():
+            try:
+                req = urllib.request.Request(url, method="POST", headers=headers, data=body)
+                urllib.request.urlopen(req, timeout=3.0).close()
+            except Exception:
+                pass  # best-effort
+
+        threading.Thread(target=_post, daemon=True, name="saa-clientlog").start()
+        return True
 
     # ── external feed (bring-your-own-capture) ────────────────────
 
@@ -328,6 +405,18 @@ class AttentionClient:
         return prof if prof and prof != "default" else None
 
     def _resolve_ws_url(self) -> str:
+        """Resolve self.url to a concrete wss://…/ws URL and remember it.
+
+        Stores the resolved url + derived http origin (for the client_log
+        fallback) before returning. Called once per connect, so reconnects
+        re-resolve and pick a fresh least-loaded backend each time.
+        """
+        ws_url = self._resolve_ws_url_inner()
+        self._resolved_ws_url = ws_url
+        self._log_origin = _ws_url_to_origin(ws_url)
+        return ws_url
+
+    def _resolve_ws_url_inner(self) -> str:
         """Resolve self.url to a concrete wss://…/ws URL.
 
         - ws(s)://… is treated as a direct backend URL; the server_profile (if
@@ -335,8 +424,7 @@ class AttentionClient:
         - http(s)://… is treated as a broker base URL; the broker
           bakes the selector into the wss URL it returns.
 
-        Called once per connect, so reconnects pick a fresh least-loaded
-        backend each time. Uses urllib (stdlib) — no new deps.
+        Uses urllib (stdlib) — no new deps.
         """
         url = self.url
         profile = self._effective_server_profile()
@@ -380,6 +468,7 @@ class AttentionClient:
     def _open_ws_blocking(self) -> None:
         self._ws_open.clear()
         self._ws_closed.clear()
+        self._handshake_done.clear()
         self._close_info = {}
         self._sent_audio = 0
         self._sent_video = 0
@@ -387,6 +476,7 @@ class AttentionClient:
         self._last_rtt_ms = None
         self._ws_opened_at = 0.0
         self._warmed_up = False
+        self._stall_emitted = False
 
         ws_url = self._resolve_ws_url()
         subprotocols = [self.token] if self.token else None
@@ -410,15 +500,21 @@ class AttentionClient:
         self._ws_thread = threading.Thread(target=run_ws, daemon=True, name="saa-ws")
         self._ws_thread.start()
 
-        opened = self._ws_open.wait(timeout=WS_HANDSHAKE_TIMEOUT_S)
-        if not opened:
-            # If closed during handshake, report the close reason.
-            if self._ws_closed.is_set():
-                info = self._close_info
-                raise ConnectionError(
-                    f"WebSocket closed during handshake: "
-                    f"code={info.get('code')} reason={info.get('reason') or 'none'}"
-                )
+        # Poll the handshake so stop()/_reconnect_stop can abort an in-flight
+        # connect instead of blocking the full handshake timeout.
+        deadline = time.monotonic() + WS_HANDSHAKE_TIMEOUT_S
+        done = False
+        while time.monotonic() < deadline:
+            if self._stopping or self._reconnect_stop.is_set():
+                try:
+                    self._ws.close()
+                except Exception:
+                    pass
+                raise ConnectionError("WebSocket connect aborted by stop()")
+            if self._handshake_done.wait(timeout=0.1):
+                done = True
+                break
+        if not done:
             try:
                 self._ws.close()
             except Exception:
@@ -426,11 +522,20 @@ class AttentionClient:
             raise TimeoutError(
                 f"WebSocket handshake timed out after {WS_HANDSHAKE_TIMEOUT_S}s (url={self.url})"
             )
+        if not self._ws_open.is_set():
+            # Handshake finished by closing rather than opening — report why.
+            info = self._close_info
+            raise ConnectionError(
+                f"WebSocket closed during handshake: "
+                f"code={info.get('code')} reason={info.get('reason') or 'none'}"
+            )
 
     def _on_ws_open(self, ws) -> None:
         self._ws_opened_at = time.monotonic()
         self._last_pong_at = self._ws_opened_at
+        self._stall_emitted = False
         self._ws_open.set()
+        self._handshake_done.set()
         self._emit("connected")
 
     def _on_ws_message(self, ws, message) -> None:
@@ -446,34 +551,118 @@ class AttentionClient:
         code = code or 0
         reason = reason or ""
         was_clean = code == 1000
+        # code=0 / no-code normalizes to 1006 for retry classification.
+        norm_code = code or 1006
         self._close_info = {"code": code, "reason": reason, "was_clean": was_clean}
 
+        opened_mid_session = bool(self._ws_opened_at)
         # an unclean drop after the session was up
-        # means audio/predictions/turns stop until the consumer reconnects.
-        if not was_clean and self._ws_opened_at:
+        # means audio/predictions/turns stop until we reconnect.
+        if not was_clean and opened_mid_session:
             logger.warning(
                 "[saa] websocket closed mid-session: code=%s reason=%s"
                 " — predictions/turns stop until reconnect",
                 code, reason or "none",
             )
+
         self._ws_closed.set()
-        # Unblock handshake waiter if we closed before opening.
-        self._ws_open.set()
+        # Clear so the heartbeat guard and senders see a dead socket; set
+        # _handshake_done so a blocked _open_ws_blocking waiter unblocks.
+        self._ws_open.clear()
+        self._handshake_done.set()
+
+        # A socket that never opened (failed initial handshake or a failed
+        # reconnect attempt) emits no lifecycle/error events — the JS `settled`
+        # check does the same. The initial case raises out of start(); the
+        # reconnect loop logs+retries on its own.
+        if not opened_mid_session:
+            return
+
+        # Reconnect only for an opened mid-session socket that dropped on a
+        # retriable code while we aren't stopping.
+        will_reconnect = (
+            self.auto_reconnect
+            and not self._stopping
+            and _is_retriable(norm_code)
+        )
+
         self._emit("disconnected", DisconnectedEvent(
             code=code, reason=reason, was_clean=was_clean,
         ))
-        err = _close_to_error(code, reason, was_clean)
-        if err is not None:
-            self._emit("error", err)
+
+        # B8: suppress the scary error when we're about to reconnect — the
+        # reconnecting/reconnected events tell that story instead. Also stay
+        # silent while a reconnect loop is already running (a re-opened socket
+        # that dropped again) so the loop solely owns the narrative.
+        if not will_reconnect and not self._reconnecting:
+            err = _close_to_error(code, reason, was_clean)
+            if err is not None:
+                self._emit("error", err)
+
+        if will_reconnect:
+            self._spawn_reconnect(norm_code)
 
     def _on_ws_error(self, ws, error) -> None:
-        logger.debug("ws error: %s", error)
+        # The following _on_ws_close emits the user-facing error; we only
+        # raise log visibility here, never double-fire an error event.
+        logger.warning("ws error: %s", error)
+
+    # ── reconnect ─────────────────────────────────────────────────
+
+    def _spawn_reconnect(self, last_code: int) -> None:
+        # Runs on the dying ws thread, so hand off to a fresh daemon thread.
+        if self._reconnecting:
+            return
+        self._reconnecting = True
+        self._reconnect_stop.clear()
+        self._reconnect_thread = threading.Thread(
+            target=self._reconnect_loop, args=(last_code,),
+            daemon=True, name="saa-reconnect",
+        )
+        self._reconnect_thread.start()
+
+    def _reconnect_loop(self, last_code: int) -> None:
+        attempt = 0
+        try:
+            while not self._stopping and not self._reconnect_stop.is_set():
+                # Full-jitter backoff: uniform in [0, min(cap, base * 2**k)].
+                ceiling = min(RECONNECT_CAP_S, RECONNECT_BASE_S * (2 ** attempt))
+                delay = random.uniform(0.0, ceiling)
+                self._emit("reconnecting", ReconnectingEvent(
+                    attempt=attempt + 1, delay_s=delay, last_code=last_code,
+                ))
+                # Interruptible sleep — stop() sets _reconnect_stop.
+                if self._reconnect_stop.wait(timeout=delay):
+                    return
+                if self._stopping:
+                    return
+                try:
+                    self._open_ws_blocking()
+                except Exception as e:
+                    logger.warning("[saa] reconnect attempt %d failed: %s", attempt + 1, e)
+                    attempt += 1
+                    continue
+                # stop() may have landed while this attempt was mid-handshake —
+                # tear the fresh socket down rather than bring it up on a
+                # stopped client (no heartbeat, no 'reconnected' narrative).
+                if self._stopping or self._reconnect_stop.is_set():
+                    try:
+                        self._ws.close()
+                    except Exception:
+                        pass
+                    return
+                # Opened — mic/cam/heartbeat threads resume on the new socket.
+                self._emit("reconnected", ReconnectedEvent(attempts=attempt + 1))
+                return
+        finally:
+            self._reconnecting = False
 
     def _handle_msg(self, msg: dict) -> None:
         t = msg.get("type")
 
         if t == "pong":
             self._last_pong_at = time.monotonic()
+            self._stall_emitted = False  # reset the stall latch on every pong
             client_ts = msg.get("client_ts")
             if isinstance(client_ts, (int, float)):
                 self._last_rtt_ms = (time.monotonic() * 1000.0) - float(client_ts)
@@ -533,8 +722,12 @@ class AttentionClient:
             ))
         elif t == "started":
             self._emit("started")
-            # `started` only means the model is loaded
+            # `started` only means the model is loaded. Re-push the threshold
+            # and re-apply mute here so a reconnected session restores its
+            # state uniformly with the initial one (no separate resync path).
             self._send_control({"action": "set_threshold", "value": self.threshold})
+            if self._muted:
+                self._send_control({"action": "mute"})
         elif t == "warmup_complete":
             if not self._warmed_up:
                 self._warmed_up = True
@@ -564,15 +757,17 @@ class AttentionClient:
                 title="Server Error",
                 message=msg.get("message") or "",
                 detail=msg.get("detail"),
+                kind="server",
             ))
 
-    def _send_control(self, data: dict) -> None:
+    def _send_control(self, data: dict) -> bool:
         if self._ws is None or not self._ws_open.is_set():
-            return
+            return False
         try:
             self._ws.send(json.dumps(data))
+            return True
         except Exception:
-            pass
+            return False
 
     def _on_mic_pcm16(self, pcm16_bytes: bytes) -> None:
         # Don't gate on self._muted — keep streaming PCM during mute. The
@@ -610,11 +805,23 @@ class AttentionClient:
                 continue
             now = time.monotonic()
             if now - self._last_pong_at > WS_PONG_TIMEOUT_S:
-                self._emit("error", AttentionErrorEvent(
-                    title="Connection Stalled",
-                    message="No pong received within timeout window.",
-                    detail=f"{now - self._last_pong_at:.1f}s since last pong",
-                ))
+                # Emit once per stall episode (latch resets on the next pong),
+                # then force-close so reconnect/teardown takes over and we stop
+                # pinging a half-open socket.
+                if not self._stall_emitted:
+                    self._stall_emitted = True
+                    self._emit("error", AttentionErrorEvent(
+                        title="Connection Stalled",
+                        message="No pong received within timeout window.",
+                        detail=f"{now - self._last_pong_at:.1f}s since last pong",
+                        kind="transport",
+                        retriable=True,
+                    ))
+                    try:
+                        self._ws.close()
+                    except Exception:
+                        pass
+                continue
             self._send_control({"action": "ping", "ts": time.monotonic() * 1000.0})
             if now - last_stats_at >= WS_STATS_INTERVAL_S:
                 self._emit("stats", StatsEvent(
@@ -657,6 +864,24 @@ def _to_float32_mono(audio: Any) -> np.ndarray:
     return arr.astype(np.float32) / 32768.0
 
 
+def _is_retriable(code: int) -> bool:
+    """Retriable = close code NOT in the fatal set (auth/protocol/policy)."""
+    return code not in FATAL_CLOSE_CODES
+
+
+def _ws_url_to_origin(ws_url: str) -> Optional[str]:
+    """Derive the http origin for the client_log fallback from a resolved ws
+    url: wss->https, ws->http, path /client_log. Returns scheme://host[:port]."""
+    try:
+        parts = urllib.parse.urlsplit(ws_url)
+    except Exception:
+        return None
+    scheme = {"wss": "https", "ws": "http"}.get(parts.scheme)
+    if not scheme or not parts.netloc:
+        return None
+    return f"{scheme}://{parts.netloc}"
+
+
 def _close_to_error(code: int, reason: str, was_clean: bool) -> Optional[AttentionErrorEvent]:
     if code == 1000:
         return None
@@ -666,6 +891,8 @@ def _close_to_error(code: int, reason: str, was_clean: bool) -> Optional[Attenti
             message="Server rejected the auth token.",
             detail=reason or f"close code {code}",
             code=code,
+            kind="auth",
+            retriable=False,
         )
     if code == 1013:
         return AttentionErrorEvent(
@@ -673,13 +900,17 @@ def _close_to_error(code: int, reason: str, was_clean: bool) -> Optional[Attenti
             message="Throttled by server — try again shortly.",
             detail=reason or f"close code {code}",
             code=code,
+            kind="rate_limit",
+            retriable=True,
         )
-    if code == 1006:
+    if code in (1006, 0):
         return AttentionErrorEvent(
             title="Connection Failed",
             message="Could not reach the server.",
             detail=f"The server may be down or unreachable. (close code {code})",
             code=code,
+            kind="transport",
+            retriable=True,
         )
     if not was_clean:
         return AttentionErrorEvent(
@@ -687,5 +918,7 @@ def _close_to_error(code: int, reason: str, was_clean: bool) -> Optional[Attenti
             message="Connection lost unexpectedly.",
             detail=f"code={code} reason={reason or 'none'}",
             code=code,
+            kind="transport",
+            retriable=True,
         )
     return None
