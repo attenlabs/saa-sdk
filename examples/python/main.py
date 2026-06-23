@@ -304,7 +304,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--camera-index", type=int, default=None, help="Webcam device index (skip selector)")
     p.add_argument("--mic-device", default=None,
                    help="Mic device name or index (system default if unset)")
-    p.add_argument("--threshold", type=float, default=0.75,
+    p.add_argument("--threshold", type=float, default=0.70,
                    help="Device-class trigger threshold 0..1")
     p.add_argument("--no-video", action="store_true", help="Disable webcam capture")
     p.add_argument("--no-audio", action="store_true", help="Disable mic capture")
