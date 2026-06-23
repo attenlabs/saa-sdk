@@ -1,6 +1,6 @@
 # SAA + Pipecat (on Daily)
 
-A sample that adds **attention labs SAA** addressee gating to a [Pipecat](https://github.com/pipecat-ai/pipecat) voice agent running on Daily. SAA decides, per utterance, whether speech in the room was meant for the agent or not.
+A sample that adds **attention labs SAA** device-directed gating to a [Pipecat](https://github.com/pipecat-ai/pipecat) voice agent running on Daily. SAA decides, per utterance, whether speech in the room was meant for the agent or not.
 
 The [`web/`](./web) demo is a single `uvicorn` process that creates an ephemeral Daily room, summons the SAA agent, spawns an OpenAI Realtime voice agent into the same room (when `OPENAI_API_KEY` is set), and serves a vanilla HTML/JS frontend that renders SAA's prediction stream as a live overlay.
 
@@ -50,7 +50,8 @@ OPENAI_API_KEY=              # optional: enables the talkback voice agent
 ## Run
 
 ```bash
-cd examples/pipecat/web
+git clone https://github.com/attenlabs/saa-sdk.git
+cd saa-sdk/examples/pipecat/web
 
 # Python 3.11+ is required (pipecat-ai 1.x dropped 3.10 support).
 # macOS: brew install python@3.11
@@ -145,6 +146,11 @@ Lifecycle: the agent shuts down on `on_participant_left` (when you click Stop in
 - One target participant per session. Multi-user rooms need one `start_attention_session` call each.
 - `DailyParams(audio_in_user_tracks=True)` is required when your bot shares the room with the human, otherwise the bot's own TTS feeds back as `InputAudioRawFrame`s.
 - Identity matching uses the nested `participant["info"]["userName"]`, not the top-level `userName`.
+
+## Recommended usage
+
+Try three send thresholds and keep the one that performs best: `0.6`, `0.77`, `0.88`.
+Raise it for fewer false triggers, lower it to catch borderline speech. Set it on the engine with `set_threshold(v)`.
 
 ## Deploy targets
 

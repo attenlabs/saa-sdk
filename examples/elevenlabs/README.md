@@ -22,7 +22,8 @@ ElevenLabs runs its agent inside its own sealed WebRTC room, so this sample uses
 Needs **Python 3.10 to 3.12** and an ElevenLabs agent ID.
 
 ```bash
-cd examples/elevenlabs
+git clone https://github.com/attenlabs/saa-sdk.git
+cd saa-sdk/examples/elevenlabs
 cp .env.example .env     # fill SAA_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_AGENT_ID
 
 cd voice_agent
@@ -82,3 +83,8 @@ One env file, [`.env`](./.env.example) in this directory:
 - The gate opens ~250 ms after device-directed speech starts (classifier latency); a hard gate can clip an utterance's first syllable. See the sample README for the softer `register_user_activity` alternative.
 - Interjection is JS-only today, so it isn't wired in this Python sample.
 - Barge-in is handled by ElevenLabs' own VAD.
+
+## Recommended usage
+
+Try three send thresholds and keep the one that performs best: `0.5`, `0.7`, `0.8`.
+Raise it for fewer false triggers, lower it to catch borderline speech. Set `SAA_CLASS2_THRESHOLD`, or call `saa.set_threshold(v)` live.

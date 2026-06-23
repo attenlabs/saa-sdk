@@ -35,7 +35,8 @@ set_bridge_factory(lambda: OpenAIRealtimeBridge(api_key=os.environ["OPENAI_API_K
 ## How to run
 
 ```bash
-cd examples/twilio
+git clone https://github.com/attenlabs/saa-sdk.git
+cd saa-sdk/examples/twilio
 cp .env.example .env          # fill SAA_API_KEY and optionally Twilio + bridge keys
 
 cd media_streams

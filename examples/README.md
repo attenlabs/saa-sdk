@@ -8,6 +8,13 @@
 
 Runnable SAA examples. The two **streaming-SDK demos** below show the SDK driving its own capture loop end to end; the rest integrate SAA into third-party voice-agent stacks (LiveKit, Pipecat, ElevenLabs, Twilio). Each consumes a public package, no example depends on a private model artifact.
 
+## Get the code
+
+```bash
+git clone https://github.com/attenlabs/saa-sdk.git
+cd saa-sdk
+```
+
 ## Streaming SDK (start here)
 
 The SDK captures mic + webcam itself, streams to SAA, and routes detected turns to an LLM (OpenAI Realtime shown). No agent framework in the loop, the shortest path from a token to live predictions. One demo per language:
@@ -52,7 +59,7 @@ Needs **attenlabs-saa >= 0.6.0** and **elevenlabs >= 2.45**.
 
 ## Twilio Media Streams
 
-Phone calls over the PSTN — inbound or outbound — gated by SAA before any audio reaches STT or LLM. The adapter in [`twilio/media_streams/server.py`](./twilio/media_streams/server.py) transcodes μ-law 8 kHz Twilio frames to PCM16 16 kHz and feeds them to SAA via `feed_audio`. Only device-directed caller speech reaches the bridge; side talk and the agent's own TTS echo are filtered out. Three bridge options ship out of the box: `LoggingBridge` (no keys, good for smoke-testing), `OpenAIRealtimeBridge`, and `DeepgramOpenAIElevenLabsBridge`.
+Inbound or outbound PSTN phone calls, gated by SAA before any audio reaches STT or LLM. The adapter in [`twilio/media_streams/server.py`](./twilio/media_streams/server.py) transcodes μ-law 8 kHz Twilio frames to PCM16 16 kHz and feeds them to SAA via `feed_audio`. Only device-directed caller speech reaches the bridge; side talk and the agent's own TTS echo are filtered out. Three reference bridges are included: `LoggingBridge` (no keys, good for smoke-testing), `OpenAIRealtimeBridge`, and `DeepgramOpenAIElevenLabsBridge`.
 
 | Sample | What it shows | Run |
 |---|---|---|
@@ -67,6 +74,15 @@ Needs **attenlabs-saa >= 0.6.1**, **fastapi**, **uvicorn**, **numpy**, and **twi
 | Stack | Shape |
 |---|---|
 | Proactive-agent overlays | per-stack `mark_responding` lifecycle recipes |
+
+## Recommended usage
+
+Try three send thresholds and keep the one that performs best for your use case:
+
+- With video (webcam) enabled: `0.6`, `0.77`, `0.88`
+- Audio-only: `0.5`, `0.7`, `0.8`
+
+The send threshold is the confidence required to treat speech as device-directed. Raise it for fewer false triggers, lower it to catch quieter or borderline speech.
 
 ## Conventions
 

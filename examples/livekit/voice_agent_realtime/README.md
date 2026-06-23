@@ -4,7 +4,7 @@ A speech-to-speech voice agent (OpenAI Realtime) with **attention labs SAA** wir
 
 ## Why this one matters
 
-A `RealtimeModel` has no swappable VAD slot, it handles its own turn-taking end to end. So stock LiveKit has **no place to hook an addressee gate**: the model hears every voice in the room and will answer side conversations, background TV, and the kids. SAA is the way to give a realtime model selective attention.
+A `RealtimeModel` has no swappable VAD slot, it handles its own turn-taking end to end. So stock LiveKit has **no place to hook a device-directed gate**: the model hears every voice in the room and will answer side conversations, background TV, and the kids. SAA is the way to give a realtime model selective attention.
 
 `session.input.set_audio_enabled(False)` detaches the input stream *upstream of* `RealtimeModel.push_audio`, so the model literally never receives the gated audio. `session.interrupt()` maps to the realtime provider's own cancel (`_rt_session.interrupt()`). Both are verified to work for realtime sessions.
 
@@ -21,7 +21,8 @@ A single file ([`agent.py`](./agent.py)):
 ## Quickstart
 
 ```bash
-cd examples/livekit/voice_agent_realtime
+git clone https://github.com/attenlabs/saa-sdk.git
+cd saa-sdk/examples/livekit/voice_agent_realtime
 python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
 
 pip install -r requirements.txt

@@ -22,7 +22,8 @@ SAA is a pre-STT device-directed gate for inbound and outbound phone calls over 
 Needs **Python 3.10 to 3.12** and a Twilio phone number.
 
 ```bash
-cd examples/twilio
+git clone https://github.com/attenlabs/saa-sdk.git
+cd saa-sdk/examples/twilio
 cp .env.example .env     # fill SAA_API_KEY plus Twilio + bridge keys
 
 cd media_streams
@@ -90,3 +91,8 @@ One env file, [`.env.example`](./.env.example) in this directory:
 - **Call quality dependence.** Reliability tracks carrier signal quality. A lossy or heavily compressed leg (VoIP -> PSTN handoff, weak cellular, echo-heavy room) degrades the PCM fed to SAA and can raise the false-reject rate.
 - **End-of-turn latency.** The adapter accumulates Twilio's 20 ms inbound frames into 100 ms SAA frames before forwarding. SAA's turn accumulator adds additional latency; under continuous cross-talk very long utterances may be cut off at the maximum turn length.
 - **Signature validation is optional in dev.** `X-Twilio-Signature` is validated only when `TWILIO_AUTH_TOKEN` is set. Always set it in production; an unsigned POST to `/voice` is enough for an attacker to redirect callers to a stream URL of their choice.
+
+## Recommended usage
+
+Try three send thresholds and keep the one that performs best: `0.5`, `0.7`, `0.8`.
+Raise it for fewer false triggers, lower it to catch borderline speech. Set `SAA_THRESHOLD`, or call `set_threshold(v)` live.

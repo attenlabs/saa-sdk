@@ -19,7 +19,8 @@ Follow these steps in order:
 From a checkout of the [saa-sdk](https://github.com/attenlabs/saa-sdk) monorepo:
 
 ```bash
-cd examples/web
+git clone https://github.com/attenlabs/saa-sdk.git
+cd saa-sdk/examples/web
 npm install
 ```
 
@@ -57,6 +58,11 @@ Example: `/?token=al_live_…&openai_key=sk-…`
 6. A small guided flow (top-of-screen pill) walks first-time users through *talk to the computer → talk to each other → free play*.
 
 The LLM bridge is deliberately part of this demo, not the SDK, swap in whichever provider you like.
+
+## Recommended usage
+
+Try three send thresholds and keep the one that performs best: `0.6`, `0.77`, `0.88`.
+Raise it for fewer false triggers, lower it to catch borderline speech. Drag the threshold slider, or call `client.setThreshold(v)`.
 
 ## Security note
 

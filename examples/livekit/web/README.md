@@ -38,7 +38,8 @@ python agent.py dev
 **Terminal 2, this token server:**
 
 ```bash
-cd examples/livekit/web
+git clone https://github.com/attenlabs/saa-sdk.git
+cd saa-sdk/examples/livekit/web
 python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python -m uvicorn token_server:app --port 8000

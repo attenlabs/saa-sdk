@@ -1,6 +1,6 @@
 # SAA + LiveKit Agents
 
-Reference samples that add **attention labs SAA** addressee gating to LiveKit voice agents. SAA decides, per utterance, whether speech in the room was meant for the agent or not.
+Reference samples that add **attention labs SAA** device-directed gating to LiveKit voice agents. SAA decides, per utterance, whether speech in the room was meant for the agent or not.
 
 ## How SAA integrates
 
@@ -21,6 +21,11 @@ The whole client ([`packages/saa-livekit-client`](../../packages/saa-livekit-cli
 All target **LiveKit Agents 1.5.x** using the `AgentServer` + `@server.rtc_session()` shape. (`WorkerOptions(entrypoint_fnc=...)` also works on 1.5.x and is the older idiom.)
 
 ## Quick start: realtime agent + web client
+
+```bash
+git clone https://github.com/attenlabs/saa-sdk.git
+cd saa-sdk/examples/livekit
+```
 
 Talk to a SAA-gated OpenAI Realtime agent in your browser. Two terminals, one shared `.env`. Needs **Python 3.10+**.
 
@@ -96,3 +101,8 @@ Plus a `@session.on("agent_state_changed")` hook that calls `engine.responding_s
 - The agent's LiveKit URL must be reachable from the SAA cloud.
 - Both audio **and** video tracks should be available.
 - One target participant per session. Multi-user rooms need one `start_attention_session` call each.
+
+## Recommended usage
+
+Try three send thresholds and keep the one that performs best: `0.6`, `0.77`, `0.88`.
+Raise it for fewer false triggers, lower it to catch borderline speech. Set it on the engine with `attention.set_threshold(v)`.

@@ -1,6 +1,6 @@
 # voice_agent: SAA-gated ElevenLabs Conversational AI
 
-An [ElevenLabs Conversational AI](https://elevenlabs.io/docs/eleven-agents/overview) agent with **attention labs SAA** addressee gating wired on top, via the streaming SDK's `feed_audio` ingestion.
+An [ElevenLabs Conversational AI](https://elevenlabs.io/docs/eleven-agents/overview) agent with **attention labs SAA** device-directed gating wired on top, via the streaming SDK's `feed_audio` ingestion.
 
 ## The integration
 
@@ -43,10 +43,10 @@ conversation.start_session()                      # greet into an already-warm S
 ## Quickstart
 
 ```bash
-cd examples/elevenlabs
-cp .env.example .env     # fill SAA_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_AGENT_ID
+git clone https://github.com/attenlabs/saa-sdk.git
+cd saa-sdk/examples/elevenlabs/voice_agent
+cp ../.env.example ../.env     # fill SAA_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_AGENT_ID
 
-cd voice_agent
 python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -e ../../../packages/saa-py              # local dev against this repo
 pip install -r requirements.txt

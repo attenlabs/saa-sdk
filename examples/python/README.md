@@ -73,10 +73,9 @@ sudo apt-get install -y libportaudio2 libasound2-dev
 
 ### 5. Install the demo
 
-From a checkout of the [saa-sdk](https://github.com/attenlabs/saa-sdk) monorepo:
-
 ```bash
-cd examples/python
+git clone https://github.com/attenlabs/saa-sdk.git
+cd saa-sdk/examples/python
 pip install attenlabs-saa cv2-enumerate-cameras simpleaudio
 ```
 
@@ -141,10 +140,17 @@ Your pipeline only needs to act on state `2`. States `0` and `1` let you skip AS
 
 ## Tuning
 
-- `--threshold` (default `0.75`): minimum confidence for a state-`2` prediction to count as device-directed.
+- `--threshold` (default `0.70`): minimum confidence for a state-`2` prediction to count as device-directed.
 - Turn detection is handled by the SAA server/SDK (`on_turn_ready`); the demo just forwards the captured turn. `_BUFFER_LEN` in [main.py](main.py) only sizes the on-screen prediction history, not the trigger.
 
 Lower the threshold for more sensitive triggering; raise it for fewer false starts.
+
+## Recommended usage
+
+Try three thresholds with `--threshold` and keep the best:
+
+- with video enabled: `0.75`, `0.85`
+- with `--no-video`: `0.65`, `0.75`
 
 ---
 
@@ -156,7 +162,7 @@ Lower the threshold for more sensitive triggering; raise it for fewer false star
 --openai-key        OpenAI API key; falls back to OPENAI_API_KEY env var
 --camera-index      Webcam device index (skip the picker)
 --mic-device        Mic device name or numeric index (skip the picker)
---threshold         Device-class trigger threshold 0..1 (default 0.75)
+--threshold         Device-class trigger threshold 0..1 (default 0.70)
 --no-video          Disable webcam capture
 --no-audio          Disable mic capture
 --no-llm            Disable LLM stage even if a key is set

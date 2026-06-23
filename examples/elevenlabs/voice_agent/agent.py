@@ -35,8 +35,8 @@ OUTPUT_BYTES_PER_SEC = 16000 * 2
 
 class SAAFeedAudioInterface(AudioInterface):
     """Tees the mic into SAA and feeds ElevenLabs the user's real audio only while
-    device-directed; on on_turn_ready it sends a silence tail to endpoint, and
-    nothing between turns (Option B).
+    device-directed; on on_turn_ready it streams silence until the agent replies so
+    ElevenLabs' turn model endpoints, and sends nothing between turns (Option B).
 
     - Gate opens on class-2 (device-directed) and closes at once on class-1
       (human-directed). A class-0 (silence) dip is debounced for
@@ -47,20 +47,20 @@ class SAAFeedAudioInterface(AudioInterface):
       thread, so output()-idle would flip responding off mid-playback and the
       agent's echo (no AEC) would leak back as user audio.
 
-    - `endpoint()` (called on on_turn_ready) sends `endpoint_silence_ms` of zeros so
-      ElevenLabs' VAD endpoints the turn now, at SAA's boundary. `_awaiting_reply`
-      marks the window between that tail and the agent's first audio; the keepalive
-      is suppressed there so a ping can never cancel the endpoint.
+    - `endpoint()` (called on on_turn_ready) opens the awaiting-reply window. The
+      watchdog then streams 100 ms silence chunks for the whole window so the
+      `turn_v3` model gets the continuous trailing silence it needs to endpoint
+      (a single short tail starves it). Silence stops the moment the agent replies
+      (output()), the gate reopens, or `awaiting_timeout_ms` elapses.
 
     - The keepalive ping (`bind_keepalive`) resets ElevenLabs' turn timer so its
-      no-input timeout never re-prompts during long idle. It now fires only when
-      idle and not awaiting a reply, so it can never coincide with an endpoint.
+      no-input timeout never re-prompts during long idle. It fires only when idle
+      and not awaiting a reply, so it can never coincide with an endpoint.
     """
 
     def __init__(self, base: AudioInterface, saa: AttentionClient, *,
                  close_debounce_ticks: int = 4, responding_tail_ms: int = 300,
-                 keepalive_s: float = 5.0, endpoint_silence_ms: int = 600,
-                 awaiting_timeout_ms: int = 4000):
+                 keepalive_s: float = 5.0, awaiting_timeout_ms: int = 6000):
         self._base = base
         self._saa = saa
         self._close_debounce = close_debounce_ticks
@@ -72,8 +72,8 @@ class SAAFeedAudioInterface(AudioInterface):
         self._responding = False
         self._play_until = 0.0          # monotonic deadline: agent audio plays until here
         self._sending_real = False      # last send state (real vs off) for transition logs
-        self._endpoint_silence_s = endpoint_silence_ms / 1000.0
-        self._awaiting_reply = False    # tail sent, agent reply not yet started
+        self._silence_chunk = bytes(int(0.1 * 16000) * 2)  # 100 ms zero PCM, streamed while awaiting
+        self._awaiting_reply = False    # turn done, agent reply not yet started
         self._awaiting_since = 0.0
         self._awaiting_timeout_s = awaiting_timeout_ms / 1000.0
         self._keepalive_s = keepalive_s # ping period to reset ElevenLabs' turn timer
@@ -161,15 +161,14 @@ class SAAFeedAudioInterface(AudioInterface):
         self._set_responding(False, "interrupt")
 
     def endpoint(self) -> None:
-        # SAA reported the turn is done — feed a short silence tail so ElevenLabs
-        # endpoints now, then mark the awaiting-reply window (keepalive suppressed).
+        # SAA reported the turn is done — open the awaiting-reply window. The
+        # watchdog streams silence through it so turn_v3 gets continuous trailing
+        # silence to endpoint on (keepalive suppressed for the whole window).
         if self._user_cb is None or self._responding:
             return
-        n = int(self._endpoint_silence_s * 16000) * 2
         self._awaiting_reply = True
         self._awaiting_since = time.monotonic()
-        log.info("ENDPOINT — %dms silence tail", int(self._endpoint_silence_s * 1000))
-        self._user_cb(bytes(n))
+        log.info("ENDPOINT — streaming silence until reply (max %.1fs)", self._awaiting_timeout_s)
 
     # ── internals ─────────────────────────────────────────────────────────
     def _tee(self, audio: bytes):
@@ -212,6 +211,12 @@ class SAAFeedAudioInterface(AudioInterface):
             # drop a stale awaiting-reply window if ElevenLabs never replied
             if self._awaiting_reply and now - self._awaiting_since >= self._awaiting_timeout_s:
                 self._awaiting_reply = False
+            # stream continuous silence through the awaiting window so turn_v3 gets
+            # the trailing silence it needs to endpoint (not while the gate reopened
+            # for a new turn, or once the agent is replying)
+            if (self._awaiting_reply and self._user_cb is not None
+                    and not self._gate_open and not self._responding):
+                self._user_cb(self._silence_chunk)
             # hold ElevenLabs' turn open during idle; never while awaiting an endpoint
             if (self._keepalive_cb and not self._gate_open and not self._responding
                     and not self._awaiting_reply
