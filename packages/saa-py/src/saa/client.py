@@ -907,7 +907,10 @@ def _close_to_error(code: int, reason: str, was_clean: bool) -> Optional[Attenti
         return AttentionErrorEvent(
             title="Connection Failed",
             message="Could not reach the server.",
-            detail=f"The server may be down or unreachable. (close code {code})",
+            detail=(
+                f"The server may be down or unreachable."
+                f" (close code {code}, reason={reason or 'none'})"
+            ),
             code=code,
             kind="transport",
             retriable=True,
