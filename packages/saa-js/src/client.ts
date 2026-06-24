@@ -31,6 +31,12 @@ const WS_STATS_INTERVAL_MS = 10000;
 const DEFAULT_THRESHOLD = 0.7;
 const DEFAULT_SERVER_URL = "https://broker.attentionlabs.ai";
 
+// Full-jitter reconnect backoff
+const RECONNECT_BASE_S = 0.5;
+const RECONNECT_CAP_S = 20;
+// Close codes that are NOT worth retrying — give up and surface the error.
+const FATAL_CLOSE_CODES = new Set([1000, 1002, 1003, 1007, 1008, 1009, 1010, 1015]);
+
 type AnyListener = (payload?: unknown) => void;
 
 export class AttentionClient {
@@ -59,6 +65,19 @@ export class AttentionClient {
   private threshold: number;
   private started = false;
 
+  // emit "Connection Stalled" at most once per stall episode; reset on pong
+  private stallEmitted = false;
+
+  // reconnect state
+  private readonly autoReconnect: boolean;
+  private reconnecting = false;
+  private stopping = false;
+  private reconnectAttempt = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // http origin derived from the resolved ws url — used by the client-log beacon
+  private httpOrigin: string | null = null;
+
   private readonly enableAudio: boolean;
   private readonly enableVideo: boolean;
   // false for a caller-supplied stream — stop() won't stop its tracks
@@ -73,6 +92,7 @@ export class AttentionClient {
     this.threshold = clamp01(opts.initialThreshold ?? DEFAULT_THRESHOLD);
     this.enableAudio = opts.enableAudio !== false;
     this.enableVideo = opts.enableVideo !== false;
+    this.autoReconnect = opts.autoReconnect !== false;
   }
 
   on<E extends AttentionEventName>(
@@ -121,6 +141,11 @@ export class AttentionClient {
   async start(options: StartOptions = {}): Promise<void> {
     if (this.started) throw new Error("AttentionClient already started");
     this.started = true;
+    // reset reconnect state here (not in stop()) so a late reconnect callback
+    // after stop() still sees stopping=true and bails
+    this.stopping = false;
+    this.reconnecting = false;
+    this.reconnectAttempt = 0;
 
     const videoEl = options.videoElement ?? null;
     const videoOpts = this.opts.video ?? {};
@@ -189,6 +214,8 @@ export class AttentionClient {
               title: "Audio worklet error",
               message: "The audio capture worklet threw and may have stopped streaming.",
               detail: describeError(err),
+              kind: "audio",
+              retriable: false,
             });
             try {
               userOnWorkletError?.(err);
@@ -200,6 +227,8 @@ export class AttentionClient {
                 title: "Audio paused",
                 message: `Microphone capture is ${state}. Audio may not be reaching the server.`,
                 detail: `AudioContext.state=${state}`,
+                kind: "audio",
+                retriable: false,
               });
             }
             try {
@@ -246,6 +275,8 @@ export class AttentionClient {
             title: "Tab Hidden",
             message: "Browsers throttle audio and video when this tab is in the background. Keep the tab visible to stay connected.",
             detail: null,
+            kind: "environment",
+            retriable: false,
           });
         }
       };
@@ -254,6 +285,14 @@ export class AttentionClient {
   }
 
   async stop(): Promise<void> {
+    // set stopping FIRST so an in-flight onclose/backoff bails out of reconnect
+    this.stopping = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnecting = false;
+    this.reconnectAttempt = 0;
     if (this.visibilityHandler &&
         typeof document !== "undefined" &&
         typeof document.removeEventListener === "function") {
@@ -281,6 +320,8 @@ export class AttentionClient {
     this.sessionId = null;
     this.micMuted = false;
     this.feedBuffer = new Float32Array(0);
+    // leave stopping=true; start() resets it. A reconnect in-flight during
+    // stop() must keep seeing stopping=true until a fresh start().
   }
 
   mute(): void {
@@ -361,20 +402,46 @@ export class AttentionClient {
   }
 
   /**
-   * Forward a batch of browser log entries over the active WebSocket. 
-   * Returns true if the send was queued, false if the WS isn't open, 
-   * falls back to an HTTP beacon in that case.
+   * Forward a batch of browser log entries to the server. Prefers the live WS
+   * (control frame); when it's closed, dispatches a best-effort HTTP beacon to
+   * the resolved origin's /client_log. Returns true if dispatched either way.
    *
    * shape (flexible)
    *   { ts, wallclock_ts, level, category, msg, stack?, context?, count? }
    */
   sendClientLog(entries: ReadonlyArray<Record<string, unknown>>): boolean {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
     if (!entries || entries.length === 0) return true;  // nothing to do, considered success
 
-    // if ws.send synchronously throws (e.g. mid-teardown), 
-    // return false so the caller can fall back to the HTTP beacon.
-    return this.sendControl({ action: "client_log", entries });
+    if (this.sendControl({ action: "client_log", entries })) return true;
+
+    // WS closed (or send threw) — fall back to an HTTP beacon.
+    if (!this.httpOrigin) return false;
+    const endpoint = `${this.httpOrigin}/client_log`;
+    const body = JSON.stringify({ entries });
+
+    // navigator.sendBeacon survives page unload but can't set headers, so the
+    // bearer token rides along only on the fetch path.
+    try {
+      const beacon =
+        typeof navigator !== "undefined" &&
+        typeof navigator.sendBeacon === "function";
+      if (beacon) {
+        const blob = new Blob([body], { type: "application/json" });
+        if (navigator.sendBeacon(endpoint, blob)) return true;
+      }
+    } catch {}
+
+    try {
+      if (typeof fetch === "function") {
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (this.opts.token) headers["Authorization"] = `Bearer ${this.opts.token}`;
+        // keepalive lets the POST outlive an unloading page
+        void fetch(endpoint, { method: "POST", keepalive: true, headers, body }).catch(() => {});
+        return true;
+      }
+    } catch {}
+
+    return false;
   }
 
   getSessionId(): string | null {
@@ -407,7 +474,9 @@ export class AttentionClient {
     if (url.startsWith("ws://") || url.startsWith("wss://")) {
       //  bake the server_profile into the query (the backend
       // /ws reads it); precedence handled in applyServerProfileToWsUrl.
-      return applyServerProfileToWsUrl(url, this.opts.serverProfile, this.enableVideo);
+      const resolved = applyServerProfileToWsUrl(url, this.opts.serverProfile, this.enableVideo);
+      this.httpOrigin = wsUrlToHttpOrigin(resolved);
+      return resolved;
     }
     const allocateUrl = `${url.replace(/\/$/, "")}/allocate`;
     const headers: Record<string, string> = {};
@@ -429,6 +498,7 @@ export class AttentionClient {
     if (!payload.url) {
       throw new Error("broker /allocate returned no url");
     }
+    this.httpOrigin = wsUrlToHttpOrigin(payload.url);
     return payload.url;
   }
 
@@ -448,6 +518,7 @@ export class AttentionClient {
         this.sentVideo = 0;
         this.skippedVideo = 0;
         this.lastPongAt = this.wsOpenedAt;
+        this.stallEmitted = false;
         this.startHeartbeat();
         this.emit("connected");
         if (!settled) {
@@ -466,6 +537,7 @@ export class AttentionClient {
         }
         if (msg.type === "pong") {
           this.lastPongAt = performance.now();
+          this.stallEmitted = false;
           if (typeof msg.client_ts === "number") {
             this.lastRttMs = this.lastPongAt - msg.client_ts;
           }
@@ -482,24 +554,92 @@ export class AttentionClient {
         this.stopHeartbeat();
         this.ws = null;
 
+        // a failed INITIAL handshake rejects out of start() — never reconnect
+        if (!settled) {
+          settled = true;
+          reject(buildCloseError(e.code, e.reason, e.wasClean));
+          return;
+        }
+
+        // unclean mid-session drop is the lifecycle event; always emit it
         this.emit("disconnected", {
           code: e.code,
           reason: e.reason || "",
           wasClean: e.wasClean,
         });
 
-        if (!settled) {
-          settled = true;
-          reject(
-            buildCloseError(e.code, e.reason, e.wasClean),
-          );
-          return;
+        const code = normalizeCloseCode(e.code);
+        const willReconnect =
+          this.autoReconnect && !this.stopping && isRetriableCode(code);
+
+        // B8: suppress the scary error when we're about to reconnect — let
+        // reconnecting/reconnected tell the story. Otherwise emit it.
+        if (!willReconnect) {
+          const err = buildCloseError(e.code, e.reason, e.wasClean);
+          if (err) this.emit("error", err);
         }
 
-        const err = buildCloseError(e.code, e.reason, e.wasClean);
-        if (err) this.emit("error", err);
+        if (willReconnect) this.scheduleReconnect(code);
       };
     });
+  }
+
+  /**
+   * Schedule a backoff reconnect after an unclean mid-session drop. Single-
+   * threaded: a setTimeout sleep (interruptible by stop()) then a fresh
+   * connectWS(). Re-resolves the URL each attempt so the broker can re-pick a
+   * least-loaded backend. Persistent mic/cam/heartbeat pipelines read `this.ws`
+   * live, so they pause during the gap and resume on the new socket.
+   */
+  private scheduleReconnect(lastCode: number): void {
+    if (this.reconnecting || this.stopping) return;
+    this.reconnecting = true;
+
+    const attemptOnce = () => {
+      if (this.stopping) {
+        this.reconnecting = false;
+        return;
+      }
+      const k = this.reconnectAttempt;
+      const delaySec = Math.random() * Math.min(RECONNECT_CAP_S, RECONNECT_BASE_S * 2 ** k);
+      this.emit("reconnecting", {
+        attempt: k + 1,
+        delaySec,
+        lastCode,
+      });
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
+        if (this.stopping) {
+          this.reconnecting = false;
+          return;
+        }
+        this.connectWS().then(
+          () => {
+            // stop() may have landed while connecting — tear the fresh socket
+            // down rather than bring it up on a stopped client
+            if (this.stopping) {
+              this.reconnecting = false;
+              try { this.ws?.close(1000, "client stop"); } catch {}
+              this.ws = null;
+              return;
+            }
+            // onopen already fired; the started-handler resync re-applies state
+            const attempts = this.reconnectAttempt + 1;
+            this.reconnectAttempt = 0;
+            this.reconnecting = false;
+            this.emit("reconnected", { attempts });
+          },
+          () => {
+            // failed connect — back off and try again until stopped
+            this.reconnectAttempt += 1;
+            this.reconnecting = false;
+            this.scheduleReconnect(lastCode);
+          },
+        );
+      }, delaySec * 1000);
+    };
+
+    attemptOnce();
   }
 
   private handleServerMessage(msg: ServerMessage): void {
@@ -548,8 +688,11 @@ export class AttentionClient {
           this.sessionId = msg.session_id;
         }
         this.emit("started");
-        // `started` only means the model is loaded and session has started
+        // `started` only means the model is loaded and session has started.
+        // Re-push threshold + mute here so a reconnected session restores state
+        // uniformly with the initial one (no separate resync path).
         this.sendControl({ action: "set_threshold", value: this.threshold });
+        if (this.micMuted) this.sendControl({ action: "mute" });
         break;
       case "warmup_complete":
         if (!this.warmedUp) {
@@ -589,6 +732,8 @@ export class AttentionClient {
           title: "Server Error",
           message: msg.message,
           detail: msg.detail ?? null,
+          kind: "server",
+          retriable: false,
         });
         break;
     }
@@ -635,11 +780,22 @@ export class AttentionClient {
         this.lastPongAt &&
         performance.now() - this.lastPongAt > WS_PONG_TIMEOUT_MS
       ) {
-        this.emit("error", {
-          title: "Connection Stalled",
-          message: "No pong received within timeout window.",
-          detail: `${((performance.now() - this.lastPongAt) / 1000).toFixed(1)}s since last pong`,
-        });
+        // emit at most once per stall episode (latch reset on pong/open)
+        if (!this.stallEmitted) {
+          this.stallEmitted = true;
+          this.emit("error", {
+            title: "Connection Stalled",
+            message: "No pong received within timeout window.",
+            detail: `${((performance.now() - this.lastPongAt) / 1000).toFixed(1)}s since last pong`,
+            kind: "transport",
+            retriable: true,
+          });
+          // force the half-open socket closed so reconnect/teardown takes over
+          try {
+            this.ws?.close(4000, "stall");
+          } catch {}
+        }
+        return; // stop pinging a dead socket
       }
       this.lastPingAt = performance.now();
       this.sendControl({ action: "ping", ts: this.lastPingAt });
@@ -701,6 +857,8 @@ function buildCloseError(
       message: "Server rejected the auth token.",
       detail: reason || `close code ${code}`,
       code,
+      kind: "auth",
+      retriable: false,
     };
   if (code === 1013)
     return {
@@ -708,13 +866,17 @@ function buildCloseError(
       message: "Throttled by server — try again shortly.",
       detail: reason || `close code ${code}`,
       code,
+      kind: "rate_limit",
+      retriable: true,
     };
-  if (code === 1006)
+  if (code === 1006 || code === 0)
     return {
       title: "Connection Failed",
       message: "Could not reach the server.",
       detail: `The server may be down or unreachable. (close code ${code})`,
       code,
+      kind: "transport",
+      retriable: true,
     };
   if (!wasClean)
     return {
@@ -722,6 +884,27 @@ function buildCloseError(
       message: "Connection lost unexpectedly.",
       detail: `code=${code} reason=${reason || "none"}`,
       code,
+      kind: "transport",
+      retriable: true,
     };
   return null;
+}
+
+function normalizeCloseCode(code: number): number {
+  // code=0 / no-code sentinel normalizes to the abnormal-closure code 1006
+  return code === 0 ? 1006 : code;
+}
+
+function isRetriableCode(code: number): boolean {
+  return !FATAL_CLOSE_CODES.has(code);
+}
+
+function wsUrlToHttpOrigin(wsUrl: string): string | null {
+  try {
+    const u = new URL(wsUrl);
+    u.protocol = u.protocol === "wss:" ? "https:" : "http:";
+    return u.origin;
+  } catch {
+    return null;
+  }
 }
