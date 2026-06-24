@@ -117,7 +117,9 @@ client.start()                       # opens the WebSocket; captures nothing its
 client.feed_audio(pcm_chunk)         # bytes (int16 LE), np.int16, or np.float32 [-1, 1]
 ```
 
-`feed_audio` accepts arbitrary chunk sizes and re-chunks internally to the wire's 100 ms blocks; pass `sample_rate=` if your audio isn't already 16 kHz and it'll resample. Calling it while `enable_audio=True` raises (that would double the audio source). A runnable ElevenLabs Conversational AI example lives in [`saa-sdk/examples/elevenlabs`](https://github.com/attenlabs/saa-sdk/tree/main/examples/elevenlabs).
+`feed_audio` accepts arbitrary chunk sizes and re-chunks internally to the wire's 100 ms blocks; pass `sample_rate=` if your audio isn't already 16 kHz and it'll resample. Calling `feed_audio` while `enable_audio=True` raises a `RuntimeError`:
+`"feed_audio() requires enable_audio=False; this client owns its own microphone."`.
+Same applies to `feed_video` / `enable_video`. A runnable ElevenLabs Conversational AI example lives in [`saa-sdk/examples/elevenlabs`](https://github.com/attenlabs/saa-sdk/tree/main/examples/elevenlabs).
 
 Frames work the same way, construct with `enable_video=False` and push with `feed_video()`:
 
@@ -157,6 +159,10 @@ def handle(event):
 | `@on_interjection`    | `InterjectionEvent`                                                      | Proactive AI volunteer after humans go quiet |
 | `@on_error`           | `AttentionErrorEvent`                                                    | Connection, auth, or server error       |
 | `@on_disconnected`    | `DisconnectedEvent`                                                      | WebSocket closes                        |
+
+> **One handler per event.** Each `@on_*` decorator is single-slot; a second
+> registration replaces the first. To fan out, dispatch inside a single handler.
+> Direct assignment (`client.on_prediction = fn`) is not supported.
 
 ### Event types
 
