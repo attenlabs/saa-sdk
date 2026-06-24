@@ -70,7 +70,7 @@ await client.start({ videoElement: videoEl });
 | `prediction`     | `{ cls, rawCls, confidence, source, numFaces, responding }` |
 | `vad`            | `{ probability, isSpeech }` |
 | `state`          | `{ state }` (one of `listening`, `sending`, `cancelled`, `idle`) |
-| `turnReady`      | `{ audioBase64, audioPcm16, durationSec, frames, context }` |
+| `turnReady`      | `{ audioBase64: string, audioPcm16: Int16Array, durationSec: number, frames: Blob[], context: string \| null }` — `audioBase64` and `audioPcm16` carry the same PCM16 @ 16 kHz mono audio in two forms; `frames` is empty by default; `context` is `"interjection_follow_up"` or `null` |
 | `config`         | `{ modelClass2Threshold }` |
 | `stats`          | `{ rttMs, bufferedAmount, sentVideo, skippedVideo, sentAudio, uptimeMs }` |
 | `interrupt`      | `{ fadeMs, confidence }` |
