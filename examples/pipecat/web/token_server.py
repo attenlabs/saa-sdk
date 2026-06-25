@@ -28,6 +28,13 @@ def _voice_agent_enabled() -> tuple[bool, list[str]]:
     return (not missing, missing)
 
 
+def _require(name: str) -> str:
+    val = os.environ.get(name)
+    if not val:
+        raise HTTPException(503, f"server misconfigured: {name} not set")
+    return val
+
+
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -51,9 +58,12 @@ async def _log_mode() -> None:
             ", ".join(missing),
         )
 
+    if not os.environ.get("SAA_API_KEY"):
+        logger.warning("SAA_API_KEY is not set; /session will return 503.")
+
     key = os.environ.get("DAILY_API_KEY") or ""
     if not key:
-        logger.warning("DAILY_API_KEY is not set; /session will return 500.")
+        logger.warning("DAILY_API_KEY is not set; /session will return 503.")
     elif key.startswith("eyJ"):
         logger.warning(
             "DAILY_API_KEY looks like a JWT (starts with 'eyJ') — that's a "
@@ -195,7 +205,7 @@ async def _spawn_voice_agent(
                 room_url=room_url,
                 bot_token=bot_token,
                 saa_agent_identity=saa_agent_identity,
-                openai_api_key=os.environ["OPENAI_API_KEY"],
+                openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
             )
         except asyncio.CancelledError:
             raise
@@ -228,12 +238,12 @@ async def session(room: Optional[str] = None) -> dict:
     user_token = await _mint_meeting_token(room_name, human_identity)
 
     saa_agent_token = attention_agent_token(
-        daily_api_key=os.environ["DAILY_API_KEY"],
+        daily_api_key=_require("DAILY_API_KEY"),
         room_name=room_name,
     )
 
     handle = await start_attention_session(
-        api_key=os.environ["SAA_API_KEY"],
+        api_key=_require("SAA_API_KEY"),
         room_url=room_url,
         agent_token=saa_agent_token,
         participant_identity=human_identity,

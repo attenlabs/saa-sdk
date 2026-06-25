@@ -1,6 +1,6 @@
 {
   "name": "@attenlabs/saa-js",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "author": "Attention Labs <omar@attentionlabs.ai>",
   "homepage": "https://attentionlabs.ai",
   "description": "Browser/JavaScript SDK for SAA, the addressee layer for voice agents — emits a turn_ready event per device-directed utterance so only speech meant for your agent reaches your STT, LLM, or TTS. No wake word.",

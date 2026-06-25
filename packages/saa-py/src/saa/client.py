@@ -558,7 +558,7 @@ class AttentionClient:
         opened_mid_session = bool(self._ws_opened_at)
         # an unclean drop after the session was up
         # means audio/predictions/turns stop until we reconnect.
-        if not was_clean and opened_mid_session:
+        if not was_clean and opened_mid_session and not self._stopping:
             logger.warning(
                 "[saa] websocket closed mid-session: code=%s reason=%s"
                 " — predictions/turns stop until reconnect",
@@ -570,6 +570,10 @@ class AttentionClient:
         # _handshake_done so a blocked _open_ws_blocking waiter unblocks.
         self._ws_open.clear()
         self._handshake_done.set()
+
+        # Intentional shutdown
+        if self._stopping:
+            return
 
         # A socket that never opened (failed initial handshake or a failed
         # reconnect attempt) emits no lifecycle/error events — the JS `settled`

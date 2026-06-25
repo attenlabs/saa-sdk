@@ -21,6 +21,8 @@ export interface AttentionClientOptions {
   enableAudio?: boolean;
   enableVideo?: boolean;
   serverProfile?: string;
+  /** Auto-reconnect with backoff after an unclean mid-session drop (default true) */
+  autoReconnect?: boolean;
 }
 
 export interface StartOptions {
@@ -94,12 +96,25 @@ export interface AttentionErrorEvent {
   message: string;
   detail: string | null;
   code?: number;
+  /** transport | auth | rate_limit | audio | server | environment */
+  kind?: string;
+  retriable?: boolean;
 }
 
 export interface DisconnectedEvent {
   code: number;
   reason: string;
   wasClean: boolean;
+}
+
+export interface ReconnectingEvent {
+  attempt: number;
+  delaySec: number;
+  lastCode: number;
+}
+
+export interface ReconnectedEvent {
+  attempts: number;
 }
 
 export type AttentionEventMap = {
@@ -114,6 +129,8 @@ export type AttentionEventMap = {
   stats: StatsEvent;
   error: AttentionErrorEvent;
   disconnected: DisconnectedEvent;
+  reconnecting: ReconnectingEvent;
+  reconnected: ReconnectedEvent;
   interrupt: InterruptEvent;
   interjection: InterjectionEvent;
 };

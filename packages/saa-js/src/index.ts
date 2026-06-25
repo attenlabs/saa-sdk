@@ -17,6 +17,8 @@ export type {
   StatsEvent,
   AttentionErrorEvent,
   DisconnectedEvent,
+  ReconnectingEvent,
+  ReconnectedEvent,
   AttentionEventMap,
   AttentionEventName,
   AttentionListener,

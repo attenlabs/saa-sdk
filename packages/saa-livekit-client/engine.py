@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
@@ -28,10 +29,22 @@ from .types import (
 logger = logging.getLogger("saa_livekit_client.engine")
 
 DATA_TOPIC = "saa"
+_MAX_PENDING_STREAMS = 10
 
 T = TypeVar("T")
 SyncOrAsync = Callable[[T], None] | Callable[[T], Awaitable[None]]
 NullaryCallback = Callable[[], None] | Callable[[], Awaitable[None]]
+
+
+class AttentionStartupError(RuntimeError):
+    """Raised by `start()` when the hosted agent reports an error before it
+    becomes ready — fails fast with the reason instead of a blind ready_timeout.
+    """
+
+    def __init__(self, code: str, message: str):
+        super().__init__(f"saa startup error [{code}]: {message}")
+        self.code = code
+        self.message = message
 
 
 class AttentionEngine:
@@ -65,15 +78,17 @@ class AttentionEngine:
         # State
         self._is_ready = False
         self._ready_event = asyncio.Event()
+        # An error event arriving before "started" lands here and wakes start().
+        self._startup_error: ErrorEvent | None = None
         self._latest_prediction: PredictionEvent | None = None
         self._latest_threshold: float | None = None
 
         # Pending turn envelopes keyed by stream_id. The byte stream typically
         # arrives just after the JSON envelope but ordering isn't guaranteed.
-        self._pending_turns: dict[str, dict[str, Any]] = {}
+        self._pending_turns: OrderedDict[str, dict[str, Any]] = OrderedDict()
         # Pending interjection envelopes — same shape, separate dict so we
         # don't mix types when matching stream_id → typed event.
-        self._pending_interjections: dict[str, dict[str, Any]] = {}
+        self._pending_interjections: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
         self._data_handler: Callable | None = None
         self._started = False
@@ -83,9 +98,12 @@ class AttentionEngine:
     async def start(self, *, ready_timeout: float = 30.0) -> None:
         """Register data + byte-stream handlers, wait for the "started" event.
 
-        Raises asyncio.TimeoutError if the hosted agent doesn't emit "started"
-        within `ready_timeout` seconds. Common cause: agent_token expired or
-        the agent failed to subscribe to the target participant's tracks.
+        Fails with AttentionStartupError if the hosted agent publishes an
+        error before it becomes ready. Raises asyncio.TimeoutError if the agent
+        doesn't emit "started" within `ready_timeout` seconds. 
+        
+        Common cause: agent_token expired or the agent failed to subscribe to the target
+        participant's tracks.
         """
         if self._started:
             return
@@ -106,6 +124,10 @@ class AttentionEngine:
             )
 
         await asyncio.wait_for(self._ready_event.wait(), timeout=ready_timeout)
+        if self._startup_error is not None:
+            raise AttentionStartupError(
+                self._startup_error.code, self._startup_error.message,
+            )
 
     async def stop(self) -> None:
         if not self._started:
@@ -343,9 +365,24 @@ class AttentionEngine:
         if env is not None:
             self._fire_interjection(env, parsed)
             return
-        # Envelope hasn't arrived yet — stash the parsed payload by stream_id
-        # so the envelope handler can match. Two dicts to avoid type mixing.
-        self._pending_turns[stream_id] = {"_orphan_payload": parsed}
+        # Envelope hasn't arrived yet stash the parsed payload by stream_id
+        self._stash_pending(self._pending_turns, stream_id, {"_orphan_payload": parsed})
+
+    def _stash_pending(self, pending: "OrderedDict[str, dict[str, Any]]",
+                       stream_id: str, value: dict[str, Any]) -> None:
+
+        while len(pending) >= _MAX_PENDING_STREAMS:
+            old_id, _ = pending.popitem(last=False)
+            logger.warning(
+                "dropped pending stream %s — exceeded %d in-flight cap",
+                old_id, _MAX_PENDING_STREAMS,
+            )
+            if self._cb_error is not None:
+                _invoke(self._cb_error, ErrorEvent(
+                    code="chunk_buffer_overflow",
+                    message=f"dropped pending stream {old_id} (cap {_MAX_PENDING_STREAMS})",
+                ))
+        pending[stream_id] = value
 
     def _dispatch_prediction(self, env: dict[str, Any]) -> None:
         ev = PredictionEvent(
@@ -387,7 +424,7 @@ class AttentionEngine:
             self._fire_turn_ready(env, orphan["_orphan_payload"])
             return
         # Otherwise stash the envelope for the byte stream handler to match.
-        self._pending_turns[stream_id] = env
+        self._stash_pending(self._pending_turns, stream_id, env)
 
     def _dispatch_interjection_envelope(self, env: dict[str, Any]) -> None:
         stream_id = env.get("stream_id")
@@ -398,7 +435,7 @@ class AttentionEngine:
         if orphan and "_orphan_payload" in orphan:
             self._fire_interjection(env, orphan["_orphan_payload"])
             return
-        self._pending_interjections[stream_id] = env
+        self._stash_pending(self._pending_interjections, stream_id, env)
 
     def _dispatch_interrupt(self, env: dict[str, Any]) -> None:
         if self._cb_interrupt is None:
@@ -407,13 +444,17 @@ class AttentionEngine:
         _invoke(self._cb_interrupt, ev)
 
     def _dispatch_error(self, env: dict[str, Any]) -> None:
-        if self._cb_error is None:
-            return
         ev = ErrorEvent(
             code=str(env.get("code") or "unknown"),
             message=str(env.get("message") or ""),
         )
-        _invoke(self._cb_error, ev)
+        # An error before the "started" handshake aborts start() fast with the
+        # reason instead of letting it block until ready_timeout.
+        if not self._is_ready and self._startup_error is None:
+            self._startup_error = ev
+            self._ready_event.set()
+        if self._cb_error is not None:
+            _invoke(self._cb_error, ev)
 
     def _fire_turn_ready(self, env: dict[str, Any], parsed: _wire.ParsedTurnPayload) -> None:
         if self._cb_turn_ready is None:

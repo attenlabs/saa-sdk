@@ -10,7 +10,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from livekit.api import AccessToken, VideoGrants
@@ -25,12 +25,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+REQUIRED_ENV = ["LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "LIVEKIT_URL"]
+
+
+def _require(name: str) -> str:
+    val = os.environ.get(name)
+    if not val:
+        raise HTTPException(503, f"server misconfigured: {name} not set")
+    return val
+
+
+@app.on_event("startup")
+async def _check_env() -> None:
+    missing = [k for k in REQUIRED_ENV if not os.environ.get(k)]
+    if missing:
+        print(f"[token_server] missing env: {', '.join(missing)} — /token will 503")
+
 
 @app.get("/token")
 async def token(room: str, identity: str) -> dict:
     # browser join token — publish cam+mic, subscribe to the agent's audio
     user_jwt = (
-        AccessToken(os.environ["LIVEKIT_API_KEY"], os.environ["LIVEKIT_API_SECRET"])
+        AccessToken(_require("LIVEKIT_API_KEY"), _require("LIVEKIT_API_SECRET"))
         .with_identity(identity)
         .with_grants(
             VideoGrants(room_join=True, room=room, can_publish=True, can_subscribe=True)
@@ -38,7 +54,7 @@ async def token(room: str, identity: str) -> dict:
         .with_ttl(timedelta(hours=1))
         .to_jwt()
     )
-    return {"url": os.environ["LIVEKIT_URL"], "token": user_jwt}
+    return {"url": _require("LIVEKIT_URL"), "token": user_jwt}
 
 
 # serve index.html + app.js + styles.css from the same origin

@@ -98,8 +98,8 @@ client = AttentionClient(
 | ---------------------------- | ----------- |
 | `start()`                    | Opens WebSocket, acquires mic + camera, starts capture threads. Non-blocking. Raises on handshake failure. |
 | `stop()`                     | Tears down capture, joins threads, closes WebSocket. |
-| `mute()`                     | Pauses upstream audio and signals server to stop VAD. |
-| `unmute()`                   | Resumes upstream audio. |
+| `mute()`                     | Signals the server to stop feeding your speech to the turn/VAD pipeline |
+| `unmute()`                   | Resumes server-side turn/VAD processing. |
 | `mark_responding(bool)`      | Tell the server an LLM response is in flight. Server stops emitting predictions while `True`. |
 | `set_threshold(value: float)` | Update device-class confidence threshold (0..1). Server acks via `config` event. |
 | `feed_audio(audio, *, sample_rate=16000)` | Stream audio captured by another stack instead of the SDK's own mic. Requires `enable_audio=False`. See [Feeding external audio](#feeding-external-audio). |

@@ -19,7 +19,7 @@ from .api import (
     SessionHandle,
     start_attention_session,
 )
-from .engine import AttentionEngine, DATA_TOPIC
+from .engine import AttentionEngine, AttentionStartupError, DATA_TOPIC
 from .factory import build_attention_entrypoint
 from .tokens import DEFAULT_AGENT_IDENTITY, attention_agent_token
 from .types import (
@@ -33,11 +33,11 @@ from .types import (
 )
 
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
 __all__ = [
     # Engine
-    "AttentionEngine", "DATA_TOPIC",
+    "AttentionEngine", "AttentionStartupError", "DATA_TOPIC",
     # REST client
     "start_attention_session", "SessionHandle", "AttentionAPIError",
     # Tokens
