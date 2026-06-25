@@ -34,6 +34,17 @@ SyncOrAsync = Callable[[T], None] | Callable[[T], Awaitable[None]]
 NullaryCallback = Callable[[], None] | Callable[[], Awaitable[None]]
 
 
+class AttentionStartupError(RuntimeError):
+    """Raised by `start()` when the hosted agent reports an error before it
+    becomes ready — fails fast with the reason instead of a blind ready_timeout.
+    """
+
+    def __init__(self, code: str, message: str):
+        super().__init__(f"saa startup error [{code}]: {message}")
+        self.code = code
+        self.message = message
+
+
 class AttentionEngine:
     """Consumes saa data-channel events from a LiveKit room.
 
@@ -65,6 +76,8 @@ class AttentionEngine:
         # State
         self._is_ready = False
         self._ready_event = asyncio.Event()
+        # An error event arriving before "started" lands here and wakes start().
+        self._startup_error: ErrorEvent | None = None
         self._latest_prediction: PredictionEvent | None = None
         self._latest_threshold: float | None = None
 
@@ -83,9 +96,12 @@ class AttentionEngine:
     async def start(self, *, ready_timeout: float = 30.0) -> None:
         """Register data + byte-stream handlers, wait for the "started" event.
 
-        Raises asyncio.TimeoutError if the hosted agent doesn't emit "started"
-        within `ready_timeout` seconds. Common cause: agent_token expired or
-        the agent failed to subscribe to the target participant's tracks.
+        Fails with AttentionStartupError if the hosted agent publishes an
+        error before it becomes ready. Raises asyncio.TimeoutError if the agent
+        doesn't emit "started" within `ready_timeout` seconds. 
+        
+        Common cause: agent_token expired or the agent failed to subscribe to the target
+        participant's tracks.
         """
         if self._started:
             return
@@ -106,6 +122,10 @@ class AttentionEngine:
             )
 
         await asyncio.wait_for(self._ready_event.wait(), timeout=ready_timeout)
+        if self._startup_error is not None:
+            raise AttentionStartupError(
+                self._startup_error.code, self._startup_error.message,
+            )
 
     async def stop(self) -> None:
         if not self._started:
@@ -407,13 +427,17 @@ class AttentionEngine:
         _invoke(self._cb_interrupt, ev)
 
     def _dispatch_error(self, env: dict[str, Any]) -> None:
-        if self._cb_error is None:
-            return
         ev = ErrorEvent(
             code=str(env.get("code") or "unknown"),
             message=str(env.get("message") or ""),
         )
-        _invoke(self._cb_error, ev)
+        # An error before the "started" handshake aborts start() fast with the
+        # reason instead of letting it block until ready_timeout.
+        if not self._is_ready and self._startup_error is None:
+            self._startup_error = ev
+            self._ready_event.set()
+        if self._cb_error is not None:
+            _invoke(self._cb_error, ev)
 
     def _fire_turn_ready(self, env: dict[str, Any], parsed: _wire.ParsedTurnPayload) -> None:
         if self._cb_turn_ready is None:

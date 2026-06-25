@@ -14,6 +14,7 @@ into the returned `run(...)` call.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from collections.abc import Awaitable, Callable
@@ -87,7 +88,10 @@ def build_attention_runner(
                 f"{', '.join(missing)}. Pass via kwargs or set the env var(s)."
             )
 
-        agent_token = attention_agent_token(
+        # Offload the blocking token mint (sync httpx.post, up to 30s) so a slow
+        # Daily API can't freeze the event loop.
+        agent_token = await asyncio.to_thread(
+            attention_agent_token,
             daily_api_key=daily_api_key,
             room_name=room_name,
             identity=agent_identity,
