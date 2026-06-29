@@ -25,12 +25,12 @@
     </g>
 
     <g transform="translate(40 212)">
-      <rect width="800" height="60" rx="10" fill="#2B2B28" stroke="#E15D35" stroke-width="2"/>
-      <rect x="0" y="0" width="6" height="60" rx="3" fill="#E15D35"/>
-      <text x="22" y="36" font-size="17" font-weight="700" fill="#E15D35">SAA · Addressee detection</text>
-      <text x="300" y="36" font-size="13" font-weight="500" fill="#E15D35" font-style="italic">Is this speech for the device?</text>
+      <rect width="800" height="60" rx="10" fill="#2B2B28" stroke="#D9FF00" stroke-width="2"/>
+      <rect x="0" y="0" width="6" height="60" rx="3" fill="#D9FF00"/>
+      <text x="22" y="36" font-size="17" font-weight="700" fill="#D9FF00">SAA · Addressee detection</text>
+      <text x="300" y="36" font-size="13" font-weight="500" fill="#D9FF00" font-style="italic">Is this speech for the device?</text>
       <g transform="translate(686 17)">
-        <rect width="96" height="26" rx="13" fill="#E15D35"/>
+        <rect width="96" height="26" rx="13" fill="#D9FF00"/>
         <text x="48" y="18" text-anchor="middle" font-size="12" font-weight="700" fill="#151513" letter-spacing="1" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace">THIS REPO</text>
       </g>
     </g>
