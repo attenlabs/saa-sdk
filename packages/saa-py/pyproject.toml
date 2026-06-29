@@ -14,6 +14,11 @@ authors = [
 ]
 keywords = ["voice-agents","voice-ai","addressee-detection","device-directed-speech","selective-auditory-attention","turn-detection","speech-recognition","vad","wake-word","conversational-ai","real-time","llm","stt","python","microphone"]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Software Development :: Libraries :: Python Modules",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",

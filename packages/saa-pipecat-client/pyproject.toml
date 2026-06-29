@@ -14,6 +14,11 @@ authors = [
 readme = "README.md"
 keywords = ["pipecat","daily","voice-agents","voice-ai","addressee-detection","device-directed-speech","turn-detection","vad","conversational-ai","selective-auditory-attention","real-time"]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Software Development :: Libraries :: Python Modules",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -31,6 +36,7 @@ Homepage = "https://attentionlabs.ai"
 Source = "https://github.com/attenlabs/saa-sdk"
 Issues = "https://github.com/attenlabs/saa-sdk/issues"
 Documentation = "https://attentionlabs.ai/docs/integrations/pipecat"
+Changelog = "https://github.com/attenlabs/saa-sdk/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 packages = ["saa_pipecat_client"]

@@ -1,6 +1,6 @@
 # attenlabs-saa
 
-Python SDK for [attention labs](https://attentionlabs.ai) real-time selective auditory attention.
+Python SDK for [Attention Labs](https://attentionlabs.ai) real-time selective auditory attention.
 
 Every voice pipeline has the same problem: the microphone hears everything, but your ASR should only process speech directed at the device. Wake words solve this with a rigid trigger phrase. SAA solves it without one, classifying every audio frame as **silent**, **human-directed**, or **device-directed** and routing only what matters.
 

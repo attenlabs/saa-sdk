@@ -1,8 +1,8 @@
 # @attenlabs/saa-js
 
-JavaScript SDK for [attention labs](https://attentionlabs.ai) Selective Auditory Attention (SAA): the addressee layer for voice agents. One decision per utterance about whether speech was meant for your agent, before STT, LLM, or TTS. No wake word, model-agnostic, drop-in for the voice stack you already use.
+JavaScript SDK for [Attention Labs](https://attentionlabs.ai) Selective Auditory Attention (SAA): the addressee layer for voice agents. One decision per utterance about whether speech was meant for your agent, before STT, LLM, or TTS. No wake word, model-agnostic, drop-in for the voice stack you already use.
 
-The mental model is simple: audio in -> addressee gate (the SAA decision) -> only addressed audio out. The attention model runs on attention labs' service, so this is a thin Apache-2.0 client: it captures and streams your mic + camera and emits typed events. All inference runs server-side.
+The mental model is simple: audio in -> addressee gate (the SAA decision) -> only addressed audio out. The attention model runs on Attention Labs' service, so this is a thin Apache-2.0 client: it captures and streams your mic + camera and emits typed events. All inference runs server-side.
 
 ## Sign up
 

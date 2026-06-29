@@ -43,7 +43,14 @@
     "stt",
     "javascript",
     "browser",
-    "webrtc"
+    "webrtc",
+    "livekit",
+    "pipecat",
+    "elevenlabs",
+    "twilio",
+    "openai-realtime",
+    "barge-in",
+    "pre-stt"
   ],
   "license": "Apache-2.0",
   "repository": { "type": "git", "url": "git+https://github.com/attenlabs/saa-sdk.git", "directory": "packages/saa-js" },
