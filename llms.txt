@@ -1,6 +1,6 @@
 # SAA — Selective Auditory Attention
 
-> SAA is the addressee layer for voice agents: one decision per utterance about whether speech was meant for your agent, before STT, LLM, or TTS. No wake word, model-agnostic, drop-in for the voice stack you already use. The classifier, model, and weights run server-side on attention labs' hosted service; the SDKs published on npm and PyPI are thin Apache-2.0 clients that only capture, encode, and stream media.
+> SAA is the addressee layer for voice agents: one decision per utterance about whether speech was meant for your agent — so background speech, side conversations, and the agent's own TTS echo are filtered out before STT, LLM, or TTS. No wake word, model-agnostic, drop-in for the voice stack you already use. The classifier, model, and weights run server-side on attention labs' hosted service; the SDKs published on npm and PyPI are thin Apache-2.0 clients that only capture, encode, and stream media.
 
 The mental model: audio in -> addressee gate (the SAA decision) -> only addressed audio out. You capture the media; SAA emits typed events. The key event is `turnReady` / `turn_ready` — one device-directed utterance (PCM16 @ 16 kHz), ready to forward to your STT or LLM. The SDKs also emit `prediction`, `vad`, `state`, `interrupt`, `config`, and `stats`, and expose `mute`/`unmute`, `setThreshold`/`set_threshold`, and `markResponding`/`mark_responding`.
 
