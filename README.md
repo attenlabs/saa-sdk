@@ -59,6 +59,8 @@ A voice agent's microphone hears every voice in the room: yours, a coworker's, t
 
 The architecture and evaluation are described in the [technical report](https://arxiv.org/abs/2604.08412).
 
+> Naming note: the report was published under the system's earlier name, Selective Attention System (SAS). It describes the same addressee-detection approach this SDK exposes as SAA (Selective Auditory Attention).
+
 ## Ways to integrate
 
 | Shape | Package | Use it when |
@@ -227,6 +229,51 @@ These Apache-2.0 client SDKs stream to the SAA cloud. For deployments where audi
 - [`packages/saa-pipecat-client/README.md`](./packages/saa-pipecat-client/README.md): the Pipecat-on-Daily client.
 - [`examples/README.md`](./examples/README.md), runnable examples.
 - [`examples/twilio/README.md`](./examples/twilio/README.md): the Twilio Media Streams bridge.
+
+## How SAA compares
+
+| Layer | The question it answers | What it does not tell you |
+|---|---|---|
+| Voice activity detection (VAD) | Is anyone speaking right now? | Whether that speech was meant for the agent |
+| Speaker diarization / speaker ID | Who is speaking? | Whether that person is addressing the agent |
+| Turn detection / endpointing | Has the speaker finished their turn? | Whether the turn was directed at the agent |
+| Wake word | Did they say the trigger phrase? | Natural address with no keyword (and it degrades across multi-turn / hands-busy use) |
+| Noise suppression / audio enhancement | Is the audio clean? | Whether the clean audio was directed at the agent |
+| **SAA (this SDK)** | **Was this utterance directed at the device?** | It does not transcribe, identify the speaker, or denoise; it gates, then hands addressed audio to the layers you already run |
+
+SAA composes with every layer above; it does not replace them (it can make a wake word optional where wake-word UX is the bottleneck).
+
+## FAQ
+
+**Isn't this just VAD?**
+No. VAD answers "is anyone speaking?" and fires on any voice: a coworker, the TV, the person next to your user. SAA answers "was this speech directed at the device?" and runs after VAD, so the pipeline only wakes on audio actually meant for the agent.
+
+**Is this speaker identification or diarization?**
+No. Speaker ID answers "who is speaking" and diarization answers "who said what." SAA answers "who is being spoken to." An enrolled user can address the person beside them (not for the agent); an unenrolled stranger can speak straight to the device (for the agent). It is an orthogonal primitive: no enrollment, no speaker profiles.
+
+**Does it run on-device?**
+No. SAA is a hosted service. The npm and PyPI packages are Apache-2.0 thin clients that capture, encode, and stream audio (and optional low-rate video) to the hosted inference endpoint; the model and weights run server-side. On-device and embedded delivery is a separate enterprise programme; it is not part of the public SDK.
+
+**Does it add latency?**
+Yes: one hosted round-trip before STT. SAA does not make addressed speech faster. What it removes is the full STT + LLM + TTS pipeline firing on audio that was never addressed to the agent. Whether that is net-positive depends on how much non-directed audio your environment carries.
+
+**Why bother, what does it save me?**
+In multi-talker environments, a large share of what your VAD flags was never meant for the agent. SAA drops that audio before STT is invoked, so you transcribe and reason over fewer non-directed seconds and get fewer ghost responses. The cheapest token is the one you never spend.
+
+**Will the agent respond to its own voice?**
+Not if you tell it when it is talking. Call `markResponding(true)` / `mark_responding(True)` when your TTS starts; SAA suppresses the gate during playback and resumes once the tail clears. No mute-mic hack.
+
+**How do I trade off false positives vs. false negatives?**
+`setThreshold()` / `set_threshold()` moves the operating point on the precision-recall curve. When the model is uncertain it fails closed: audio is not forwarded unless the system is confident the speech is addressed to the device. So the conservative default errs toward a possibly-missed command rather than a spurious trigger. Loosen the threshold to forward more readily; tighten it to suppress more aggressively.
+
+**What about my language?**
+The acoustic model is designed to be language-agnostic, but cross-lingual validation is ongoing and cross-lingual recall is a known limitation under active work. English is where confidence is highest today; test carefully in other languages and in heavy-overlap (simultaneous-speech) environments before relying on it.
+
+**How accurate is it?**
+On the held-out evaluation in the technical report (arXiv:2604.08412): **0.86 F1 audio-only**, **0.95 F1 audio + video fusion**. Two caveats up front: it fails closed under distribution shift, and cross-lingual recall is a known limitation. The paper figures demonstrate the approach; real-world performance varies by acoustic environment.
+
+**Is it open source?**
+The client SDKs are Apache-2.0. The model, weights, and inference are a hosted service, not open source; think of SAA as a hosted API with permissively-licensed client libraries, not a self-hostable model.
 
 ## License
 
