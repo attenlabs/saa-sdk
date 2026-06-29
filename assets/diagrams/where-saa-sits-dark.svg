@@ -2,77 +2,77 @@
   <title id="where-title">Where SAA sits in your voice stack</title>
   <desc id="where-desc">An eight-row voice-pipeline diagram, dark-theme variant. Upstream of SAA: noise suppression and voice-activity detection. SAA itself is the addressee-detection row, highlighted with the AttentionLabs yellow accent and a "this repo" tag. Parallel to SAA: diarisation (who is speaking) and end-of-turn detection (did the speaker finish). Downstream of SAA: STT, LLM, and TTS — the expensive stages SAA gates against media playback, side conversations, and the agent's own TTS bleed.</desc>
 
-  <rect x="0" y="0" width="880" height="560" rx="16" fill="#060d0f"/>
+  <rect x="0" y="0" width="880" height="560" rx="16" fill="#151513"/>
 
-  <text x="440" y="46" text-anchor="middle" font-family="'IBM Plex Sans Condensed', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif" font-size="24" font-weight="700" fill="#dde9ed" letter-spacing="0.2">Where SAA sits in your voice stack</text>
-  <text x="440" y="72" text-anchor="middle" font-family="'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#afd0d6">Pre-ASR addressee gate. Slotted between VAD and STT. Fail-closed.</text>
+  <text x="440" y="46" text-anchor="middle" font-family="'IBM Plex Sans Condensed', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif" font-size="24" font-weight="700" fill="#F7F6F2" letter-spacing="0.2">Where SAA sits in your voice stack</text>
+  <text x="440" y="72" text-anchor="middle" font-family="'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#A8A39A">Pre-ASR addressee gate. Slotted between VAD and STT. Fail-closed.</text>
 
   <g font-family="'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif">
     <g transform="translate(40 100)">
-      <rect width="800" height="48" rx="8" fill="#0a1618"/>
-      <rect x="0" y="0" width="6" height="48" rx="3" fill="#7eaeb5"/>
-      <text x="22" y="30" font-size="15" font-weight="700" fill="#dde9ed">Noise suppression</text>
-      <text x="260" y="30" font-size="13" font-weight="400" fill="#afd0d6" font-style="italic">What is noise?</text>
-      <text x="780" y="30" text-anchor="end" font-size="12" font-weight="700" fill="#afd0d6" letter-spacing="1" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace">UPSTREAM</text>
+      <rect width="800" height="48" rx="8" fill="#2B2B28"/>
+      <rect x="0" y="0" width="6" height="48" rx="3" fill="#A8A39A"/>
+      <text x="22" y="30" font-size="15" font-weight="700" fill="#F7F6F2">Noise suppression</text>
+      <text x="260" y="30" font-size="13" font-weight="400" fill="#A8A39A" font-style="italic">What is noise?</text>
+      <text x="780" y="30" text-anchor="end" font-size="12" font-weight="700" fill="#A8A39A" letter-spacing="1" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace">UPSTREAM</text>
     </g>
 
     <g transform="translate(40 156)">
-      <rect width="800" height="48" rx="8" fill="#0a1618"/>
-      <rect x="0" y="0" width="6" height="48" rx="3" fill="#7eaeb5"/>
-      <text x="22" y="30" font-size="15" font-weight="700" fill="#dde9ed">Voice activity detection</text>
-      <text x="260" y="30" font-size="13" font-weight="400" fill="#afd0d6" font-style="italic">Is anyone speaking?</text>
-      <text x="780" y="30" text-anchor="end" font-size="12" font-weight="700" fill="#afd0d6" letter-spacing="1" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace">UPSTREAM</text>
+      <rect width="800" height="48" rx="8" fill="#2B2B28"/>
+      <rect x="0" y="0" width="6" height="48" rx="3" fill="#A8A39A"/>
+      <text x="22" y="30" font-size="15" font-weight="700" fill="#F7F6F2">Voice activity detection</text>
+      <text x="260" y="30" font-size="13" font-weight="400" fill="#A8A39A" font-style="italic">Is anyone speaking?</text>
+      <text x="780" y="30" text-anchor="end" font-size="12" font-weight="700" fill="#A8A39A" letter-spacing="1" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace">UPSTREAM</text>
     </g>
 
     <g transform="translate(40 212)">
-      <rect width="800" height="60" rx="10" fill="#0a1618" stroke="#D9FF00" stroke-width="2"/>
-      <rect x="0" y="0" width="6" height="60" rx="3" fill="#D9FF00"/>
-      <text x="22" y="36" font-size="17" font-weight="700" fill="#D9FF00">SAA · Addressee detection</text>
-      <text x="300" y="36" font-size="13" font-weight="500" fill="#C8EF00" font-style="italic">Is this speech for the device?</text>
+      <rect width="800" height="60" rx="10" fill="#2B2B28" stroke="#E15D35" stroke-width="2"/>
+      <rect x="0" y="0" width="6" height="60" rx="3" fill="#E15D35"/>
+      <text x="22" y="36" font-size="17" font-weight="700" fill="#E15D35">SAA · Addressee detection</text>
+      <text x="300" y="36" font-size="13" font-weight="500" fill="#E15D35" font-style="italic">Is this speech for the device?</text>
       <g transform="translate(686 17)">
-        <rect width="96" height="26" rx="13" fill="#D9FF00"/>
-        <text x="48" y="18" text-anchor="middle" font-size="12" font-weight="700" fill="#060d0f" letter-spacing="1" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace">THIS REPO</text>
+        <rect width="96" height="26" rx="13" fill="#E15D35"/>
+        <text x="48" y="18" text-anchor="middle" font-size="12" font-weight="700" fill="#151513" letter-spacing="1" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace">THIS REPO</text>
       </g>
     </g>
 
     <g transform="translate(40 280)">
-      <rect width="800" height="48" rx="8" fill="#0a1618"/>
-      <rect x="0" y="0" width="6" height="48" rx="3" fill="#9AC2C5"/>
-      <text x="22" y="30" font-size="15" font-weight="700" fill="#dde9ed">Diarisation</text>
-      <text x="260" y="30" font-size="13" font-weight="400" fill="#afd0d6" font-style="italic">Who is speaking?</text>
-      <text x="780" y="30" text-anchor="end" font-size="12" font-weight="700" fill="#9AC2C5" letter-spacing="1" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace">PARALLEL</text>
+      <rect width="800" height="48" rx="8" fill="#2B2B28"/>
+      <rect x="0" y="0" width="6" height="48" rx="3" fill="#A8A39A"/>
+      <text x="22" y="30" font-size="15" font-weight="700" fill="#F7F6F2">Diarisation</text>
+      <text x="260" y="30" font-size="13" font-weight="400" fill="#A8A39A" font-style="italic">Who is speaking?</text>
+      <text x="780" y="30" text-anchor="end" font-size="12" font-weight="700" fill="#A8A39A" letter-spacing="1" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace">PARALLEL</text>
     </g>
 
     <g transform="translate(40 336)">
-      <rect width="800" height="48" rx="8" fill="#0a1618"/>
-      <rect x="0" y="0" width="6" height="48" rx="3" fill="#9AC2C5"/>
-      <text x="22" y="30" font-size="15" font-weight="700" fill="#dde9ed">End-of-turn detection</text>
-      <text x="260" y="30" font-size="13" font-weight="400" fill="#afd0d6" font-style="italic">Did the speaker finish?</text>
-      <text x="780" y="30" text-anchor="end" font-size="12" font-weight="700" fill="#9AC2C5" letter-spacing="1" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace">COMPOSABLE</text>
+      <rect width="800" height="48" rx="8" fill="#2B2B28"/>
+      <rect x="0" y="0" width="6" height="48" rx="3" fill="#A8A39A"/>
+      <text x="22" y="30" font-size="15" font-weight="700" fill="#F7F6F2">End-of-turn detection</text>
+      <text x="260" y="30" font-size="13" font-weight="400" fill="#A8A39A" font-style="italic">Did the speaker finish?</text>
+      <text x="780" y="30" text-anchor="end" font-size="12" font-weight="700" fill="#A8A39A" letter-spacing="1" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace">COMPOSABLE</text>
     </g>
 
     <g transform="translate(40 392)">
-      <rect width="800" height="48" rx="8" fill="#0a1618"/>
-      <rect x="0" y="0" width="6" height="48" rx="3" fill="#5a8890"/>
-      <text x="22" y="30" font-size="15" font-weight="700" fill="#dde9ed">STT</text>
-      <text x="260" y="30" font-size="13" font-weight="400" fill="#afd0d6" font-style="italic">What did they say?</text>
-      <text x="780" y="30" text-anchor="end" font-size="11" font-weight="700" fill="#afd0d6" letter-spacing="1" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace">DOWNSTREAM</text>
+      <rect width="800" height="48" rx="8" fill="#2B2B28"/>
+      <rect x="0" y="0" width="6" height="48" rx="3" fill="#A8A39A"/>
+      <text x="22" y="30" font-size="15" font-weight="700" fill="#F7F6F2">STT</text>
+      <text x="260" y="30" font-size="13" font-weight="400" fill="#A8A39A" font-style="italic">What did they say?</text>
+      <text x="780" y="30" text-anchor="end" font-size="11" font-weight="700" fill="#A8A39A" letter-spacing="1" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace">DOWNSTREAM</text>
     </g>
 
     <g transform="translate(40 448)">
-      <rect width="800" height="48" rx="8" fill="#0a1618"/>
-      <rect x="0" y="0" width="6" height="48" rx="3" fill="#5a8890"/>
-      <text x="22" y="30" font-size="15" font-weight="700" fill="#dde9ed">LLM</text>
-      <text x="260" y="30" font-size="13" font-weight="400" fill="#afd0d6" font-style="italic">How do I reply?</text>
-      <text x="780" y="30" text-anchor="end" font-size="11" font-weight="700" fill="#afd0d6" letter-spacing="1" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace">DOWNSTREAM</text>
+      <rect width="800" height="48" rx="8" fill="#2B2B28"/>
+      <rect x="0" y="0" width="6" height="48" rx="3" fill="#A8A39A"/>
+      <text x="22" y="30" font-size="15" font-weight="700" fill="#F7F6F2">LLM</text>
+      <text x="260" y="30" font-size="13" font-weight="400" fill="#A8A39A" font-style="italic">How do I reply?</text>
+      <text x="780" y="30" text-anchor="end" font-size="11" font-weight="700" fill="#A8A39A" letter-spacing="1" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace">DOWNSTREAM</text>
     </g>
 
     <g transform="translate(40 504)">
-      <rect width="800" height="48" rx="8" fill="#0a1618"/>
-      <rect x="0" y="0" width="6" height="48" rx="3" fill="#5a8890"/>
-      <text x="22" y="30" font-size="15" font-weight="700" fill="#dde9ed">TTS</text>
-      <text x="260" y="30" font-size="13" font-weight="400" fill="#afd0d6" font-style="italic">How do I say it?</text>
-      <text x="780" y="30" text-anchor="end" font-size="11" font-weight="700" fill="#afd0d6" letter-spacing="1" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace">DOWNSTREAM</text>
+      <rect width="800" height="48" rx="8" fill="#2B2B28"/>
+      <rect x="0" y="0" width="6" height="48" rx="3" fill="#A8A39A"/>
+      <text x="22" y="30" font-size="15" font-weight="700" fill="#F7F6F2">TTS</text>
+      <text x="260" y="30" font-size="13" font-weight="400" fill="#A8A39A" font-style="italic">How do I say it?</text>
+      <text x="780" y="30" text-anchor="end" font-size="11" font-weight="700" fill="#A8A39A" letter-spacing="1" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace">DOWNSTREAM</text>
     </g>
   </g>
 </svg>

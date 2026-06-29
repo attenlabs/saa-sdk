@@ -4,6 +4,10 @@ LiveKit client for the [SAA](https://attentionlabs.ai).
 
 Adds attention-aware gating, barge-in, and proactive interjection to any LiveKit voice agent.
 
+SAA is the addressee layer for voice agents: one decision per utterance about whether speech was meant for your agent, before STT, LLM, or TTS. No wake word, model-agnostic, drop-in for the LiveKit pipeline you already run. The mental model is simple: audio in -> addressee gate (the SAA decision) -> only addressed audio reaches your agent.
+
+The attention model runs on attention labs' hosted service, so this is a thin Apache-2.0 client: it summons a hidden hosted agent into your room and fans out its typed events. There is no ML dependency and no inference in this package.
+
 ## Install
 
 ```bash
@@ -60,7 +64,7 @@ async def entrypoint(ctx: JobContext):
 
     @engine.on_prediction
     def _(p):
-        # gate the mic, only class 2 (talking-to-device) reaches the model
+        # the addressee gate: only class 2 (talking-to-device) reaches the agent
         voice.input.set_audio_enabled(p.aligned_class == 2)
 
     @engine.on_interrupt

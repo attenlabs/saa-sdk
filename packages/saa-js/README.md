@@ -1,6 +1,8 @@
 # @attenlabs/saa-js
 
-JavaScript SDK for [attention labs](https://attentionlabs.ai) real-time attention detection.
+JavaScript SDK for [attention labs](https://attentionlabs.ai) Selective Auditory Attention (SAA): the addressee layer for voice agents. One decision per utterance about whether speech was meant for your agent, before STT, LLM, or TTS. No wake word, model-agnostic, drop-in for the voice stack you already use.
+
+The mental model is simple: audio in -> addressee gate (the SAA decision) -> only addressed audio out. The attention model runs on attention labs' service, so this is a thin Apache-2.0 client: it captures and streams your mic + camera and emits typed events. All inference runs server-side.
 
 ## Sign up
 
@@ -82,7 +84,7 @@ await client.start({ videoElement: videoEl });
 
 ## LLM integration
 
-The SDK captures speech but does **not** route it to an LLM. Use the `turnReady` event to forward audio to any model you like.
+The SDK captures speech but does **not** route it to an LLM. SAA is model-agnostic and drop-in: use the `turnReady` event to forward only device-directed audio to any model, ASR, or voice stack you like.
 
 When your LLM starts responding, call `client.mute()` and `client.markResponding(true)`. When it finishes, call `client.unmute()` and `client.markResponding(false)`.
 

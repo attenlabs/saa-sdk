@@ -2,12 +2,19 @@
 
 Pipecat / Daily client for [SAA](https://attentionlabs.ai).
 
-Adds attention-aware gating, barge-in, and proactive interjection to any
+Tells your voice agent which speech is actually for it. SAA is the addressee
+layer: one decision per utterance about whether speech was meant for your
+agent, before STT, LLM, or TTS. The mental model is simple: audio in -> the SAA
+addressee gate -> only addressed audio out. No wake word, model-agnostic,
+drop-in for any Pipecat pipeline.
+
+It adds attention-aware gating, barge-in, and proactive interjection to any
 Pipecat voice agent running on Daily, including bots deployed to
 [Daily Bots](https://docs.dailybots.ai/architecture) and Pipecat Cloud.
 
-The attention model runs on attention labs' service, so this client is a thin consumer to install. You integrate by
-minting a Daily meeting token, starting a session, and listening for typed events.
+The attention model runs on attention labs' service, so this is a thin
+Apache-2.0 client: it mints a Daily meeting token, starts a session, and
+listens for typed events. All inference runs server-side.
 
 ## Install
 

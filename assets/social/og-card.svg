@@ -2,28 +2,28 @@
   <title id="t">SAA — the addressee layer for voice agents</title>
   <desc id="d">SAA decides which speech is meant for your agent, before STT, LLM, or TTS.</desc>
   <defs>
-    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#0b1220"/><stop offset="1" stop-color="#111827"/></linearGradient>
-    <linearGradient id="side" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#374151"/><stop offset="1" stop-color="#4b5563"/></linearGradient>
-    <linearGradient id="on" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#10b981"/><stop offset="1" stop-color="#059669"/></linearGradient>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#151513"/><stop offset="1" stop-color="#151513"/></linearGradient>
+    <linearGradient id="side" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#2B2B28"/><stop offset="1" stop-color="#5c574e"/></linearGradient>
+    <linearGradient id="on" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#E15D35"/><stop offset="1" stop-color="#E15D35"/></linearGradient>
   </defs>
   <rect width="1200" height="630" fill="url(#bg)"/>
   <g transform="translate(80,150)">
-    <text x="0" y="0" font-size="32" font-weight="600" fill="#9ca3af">The addressee layer for voice agents.</text>
+    <text x="0" y="0" font-size="32" font-weight="600" fill="#A8A39A">The addressee layer for voice agents.</text>
     <text x="0" y="80" font-size="52" font-weight="800" fill="#ffffff">It decides which speech is</text>
-    <text x="0" y="140" font-size="52" font-weight="800" fill="#ffffff">meant for your <tspan fill="#10b981">agent</tspan>.</text>
-    <text x="0" y="198" font-size="23" fill="#9ca3af">Before STT, LLM, or TTS. No wake word. Drop-in for any stack.</text>
+    <text x="0" y="140" font-size="52" font-weight="800" fill="#ffffff">meant for your <tspan fill="#E15D35">agent</tspan>.</text>
+    <text x="0" y="198" font-size="23" fill="#A8A39A">Before STT, LLM, or TTS. No wake word. Drop-in for any stack.</text>
     <g transform="translate(0,238)">
       <rect x="0" y="0" width="760" height="44" fill="url(#side)" rx="6"/>
       <rect x="772" y="0" width="128" height="44" fill="url(#on)" rx="6"/>
-      <text x="380" y="28" text-anchor="middle" font-size="17" font-weight="700" fill="#e5e7eb">side talk · background media · TTS echo</text>
+      <text x="380" y="28" text-anchor="middle" font-size="17" font-weight="700" fill="#F7F6F2">side talk · background media · TTS echo</text>
       <text x="836" y="28" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">addressed</text>
     </g>
-    <text x="0" y="320" font-size="20" fill="#9ca3af">Only addressee speech reaches your STT, LLM, and TTS.</text>
+    <text x="0" y="320" font-size="20" fill="#A8A39A">Only addressee speech reaches your STT, LLM, and TTS.</text>
   </g>
   <g transform="translate(80,560)">
     <text x="0" y="0" font-size="22" font-weight="700" fill="#ffffff">attentionlabs.ai</text>
-    <text x="0" y="28" font-size="14" fill="#6b7280">github.com/attenlabs/saa-sdk  ·  npm @attenlabs/saa-js  ·  pypi attenlabs-saa</text>
+    <text x="0" y="28" font-size="14" fill="#A8A39A">github.com/attenlabs/saa-sdk  ·  npm @attenlabs/saa-js  ·  pypi attenlabs-saa</text>
   </g>
-  <circle cx="1100" cy="100" r="14" fill="#10b981"/>
-  <circle cx="1100" cy="100" r="28" fill="#10b981" opacity="0.15"/>
+  <circle cx="1100" cy="100" r="14" fill="#E15D35"/>
+  <circle cx="1100" cy="100" r="28" fill="#E15D35" opacity="0.15"/>
 </svg>
