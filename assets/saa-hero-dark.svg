@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 240" role="img" aria-labelledby="saa-hero-title saa-hero-desc">
   <title id="saa-hero-title">SAA: Selective Auditory Attention</title>
-  <desc id="saa-hero-desc">The SAA wordmark on a transparent background, with an accent underline beneath the middle A and the expansion "SELECTIVE AUDITORY ATTENTION" beneath. Lime wordmark with taupe expansion (dark-background lockup). Brand identity card for the attention labs SAA project.</desc>
+  <desc id="saa-hero-desc">The SAA wordmark on a transparent background, with an accent underline beneath the middle A and the expansion "SELECTIVE AUDITORY ATTENTION" beneath. White wordmark with a lime accent underline and taupe expansion (dark-background lockup). Brand identity card for the attention labs SAA project.</desc>
   <style>
-    .saa-text { fill: #D9FF00; }
+    .saa-text { fill: #FFFFFF; }
     .saa-subtitle { fill: #A8A39A; }
     .saa-underline { fill: #D9FF00; }
   </style>
