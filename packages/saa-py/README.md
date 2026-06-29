@@ -4,7 +4,7 @@ Python SDK for [attention labs](https://attentionlabs.ai) real-time selective au
 
 Every voice pipeline has the same problem: the microphone hears everything, but your ASR should only process speech directed at the device. Wake words solve this with a rigid trigger phrase. SAA solves it without one, classifying every audio frame as **silent**, **human-directed**, or **device-directed** and routing only what matters.
 
-`attenlabs-saa` streams mic and webcam data to the SAA inference server over WebSocket and emits typed events: attention predictions, voice activity, conversation state, and ready-to-forward speech audio. LLM routing is left to you.
+`attenlabs-saa` is a thin Apache-2.0 client: it captures and encodes your mic and webcam locally and streams them to the hosted SAA inference server over WebSocket, where the addressee model runs. It emits typed events back, attention predictions, voice activity, conversation state, and ready-to-forward speech audio. The pipeline is **audio in, addressee gate, only addressed audio out**. It is model-agnostic and drop-in: LLM routing is left to you.
 
 ## Sign up
 
@@ -51,7 +51,7 @@ except KeyboardInterrupt:
     client.stop()
 ```
 
-A full CLI demo wiring SAA + OpenAI Realtime lives at [**saa-py-demo**](https://github.com/attenlabs/saa-py-demo).
+Run `client.start()` and you'll see live `silent` / `human` / `device` predictions stream from your own mic in seconds — all you need is your API key (the `token=` argument above). A full CLI demo wiring SAA + OpenAI Realtime lives at [**saa-py-demo**](https://github.com/attenlabs/saa-py-demo).
 
 ---
 
@@ -165,7 +165,7 @@ def handle(event):
 ```python
 cls: int            # 0 = silent, 1 = human-directed, 2 = device-directed
 confidence: float   # 0..1
-source: str         # "video" or "audio"
+source: str         # "model" | "rules" | "ai_responding"
 num_faces: int      # faces detected in frame
 responding: bool    # True while the AI is mid-playback
 ```

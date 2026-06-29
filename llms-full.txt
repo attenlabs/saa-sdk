@@ -1,6 +1,6 @@
 # SAA — Selective Auditory Attention (full context)
 
-> SAA is the addressee layer for voice agents: one decision per utterance about whether speech was meant for your agent, before STT, LLM, or TTS. No wake word, model-agnostic, drop-in for the voice stack you already use. The hosted classifier runs server-side; the SDKs are thin, open-source (Apache-2.0) clients published on npm and PyPI.
+> SAA is the addressee layer for voice agents: one decision per utterance about whether speech was meant for your agent, before STT, LLM, or TTS. No wake word, model-agnostic, drop-in for the voice stack you already use. The hosted classifier runs server-side; the SDKs are thin Apache-2.0 clients published on npm and PyPI.
 
 ## What it does
 
@@ -9,7 +9,7 @@ A voice agent's microphone hears every voice in the room: yours, a coworker's, t
 SAA (Selective Auditory Attention) is a hosted classifier that runs before STT and decides, per utterance, whether the speech was directed at the device. Side talk, background media, and the agent's own playback are filtered out, so your STT / LLM / TTS only see audio meant for the agent.
 
 - No wake word. SAA decides per-utterance from the audio (and optionally low-rate video) stream.
-- Hosted. A WebSocket to Attention Labs' cloud; the open SDKs are thin clients. On-device deployment is a separate enterprise licence.
+- Hosted. A WebSocket to Attention Labs' cloud; the Apache-2.0 SDKs are thin clients. The model, weights, and inference run server-side and are closed. On-device deployment is a separate enterprise licence.
 
 SAA is the model-agnostic addressee decision that sits between your VAD and STT. It can complement your wakeword system or replace it.
 
@@ -63,7 +63,7 @@ The key event is `turnReady` (JS) / `turn_ready` (Python) — one device-directe
 
 Both SDKs also emit:
 
-- `prediction` — per-frame attention prediction with `cls` (0=silent, 1=human-directed, 2=device-directed), `confidence`, `source`, `numFaces`/`num_faces`, `responding`
+- `prediction` — per-frame attention prediction with `cls` (0=silent, 1=human-to-human side talk, 2=device-directed), `confidence`, `source` (`model` | `rules` | `ai_responding`), `numFaces`/`num_faces`, `responding`
 - `vad` — voice activity: `probability`, `isSpeech`/`is_speech`
 - `state` — conversation state: one of `listening`, `sending`, `cancelled`, `idle`
 - `interrupt` — user barging in during AI playback; `fadeMs`/`fade_ms`, `confidence`

@@ -6,7 +6,9 @@
 
 # Examples
 
-Runnable SAA examples. The two **streaming-SDK demos** below show the SDK driving its own capture loop end to end; the rest integrate SAA into third-party voice-agent stacks (LiveKit, Pipecat, ElevenLabs, Twilio). Each consumes a public package, no example depends on a private model artifact.
+Runnable SAA examples. SAA is the addressee layer for voice agents: one decision per utterance about whether speech was meant for your agent, before STT, LLM, or TTS. The mental model is the same in every sample: audio in -> addressee gate (the SAA decision) -> only addressed audio out.
+
+The two **streaming-SDK demos** below show the SDK driving its own capture loop end to end; the rest integrate SAA into third-party voice-agent stacks (LiveKit, Pipecat, ElevenLabs, Twilio). Each consumes a public package, no example depends on a private model artifact.
 
 ## Get the code
 
@@ -17,7 +19,7 @@ cd saa-sdk
 
 ## Streaming SDK (start here)
 
-The SDK captures mic + webcam itself, streams to SAA, and routes detected turns to an LLM (OpenAI Realtime shown). No agent framework in the loop, the shortest path from a token to live predictions. One demo per language:
+The SDK captures mic + webcam itself, streams to the hosted SAA inference server, and routes detected turns to an LLM (OpenAI Realtime shown). No agent framework in the loop, the shortest path from a token to watching live device-directed predictions on your own mic. One demo per language:
 
 | Sample | What it shows | Run |
 |---|---|---|

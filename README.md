@@ -52,7 +52,7 @@ A voice agent's microphone hears every voice in the room: yours, a coworker's, t
 **SAA** (Selective Auditory Attention) is a hosted classifier that runs **before STT** and decides, per utterance, whether the speech was directed at the device. Side talk, background media, and the agent's own playback are filtered out, so your STT / LLM / TTS only see audio meant for the agent.
 
 - **No wake word.** SAA decides per-utterance from the audio (and optionally low-rate video) stream.
-- **Hosted.** A real-time WebSocket to attention labs' cloud; the open SDKs are thin clients. Because it gates before STT, only addressed speech reaches the STT, LLM, and TTS you already run, so your downstream services and logs see less audio, not more. On-device deployment is a separate enterprise licence.
+- **Hosted.** A real-time WebSocket to attention labs' cloud; the model, weights, and inference run server-side, and these Apache-2.0 client SDKs are thin: they capture, encode, and stream audio (and optional low-rate video). Because it gates before STT, only addressed speech reaches the STT, LLM, and TTS you already run, so your downstream services and logs see less audio, not more. On-device deployment is a separate enterprise licence.
 
 The architecture and evaluation are described in the [technical report](https://arxiv.org/abs/2604.08412).
 
@@ -215,7 +215,7 @@ SAA is the model-agnostic addressee decision between your VAD and STT. It answer
 
 ## On-device deployment
 
-The open SDKs stream to the SAA cloud. For deployments where audio must stay on the device (telephony, embedded systems, wearables, robotics, kiosks), request on-device and embedded access at [attentionlabs.ai](https://attentionlabs.ai/#contact).
+These Apache-2.0 client SDKs stream to the SAA cloud. For deployments where audio must stay on the device (telephony, embedded systems, wearables, robotics, kiosks), request on-device and embedded access at [attentionlabs.ai](https://attentionlabs.ai/#contact).
 
 ## Documentation
 

@@ -158,7 +158,7 @@ Try three thresholds with `--threshold` and keep the best:
 
 ```
 --token             SAA auth token (required; or SAA_API_KEY env var)
---url               Override the default SAA server URL (for self-hosted SAA)
+--url               Override the default SAA server URL (for a private or enterprise SAA endpoint)
 --openai-key        OpenAI API key; falls back to OPENAI_API_KEY env var
 --camera-index      Webcam device index (skip the picker)
 --mic-device        Mic device name or numeric index (skip the picker)
