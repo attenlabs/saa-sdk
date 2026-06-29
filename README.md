@@ -57,10 +57,6 @@ A voice agent's microphone hears every voice in the room: yours, a coworker's, t
 - **No wake word.** SAA decides per-utterance from the audio (and optionally low-rate video) stream.
 - **Hosted.** A real-time WebSocket to attention labs' cloud; the model, weights, and inference run server-side, and these Apache-2.0 client SDKs are thin: they capture, encode, and stream audio (and optional low-rate video). Because it gates before STT, only addressed speech reaches the STT, LLM, and TTS you already run, so your downstream services and logs see less audio, not more. On-device deployment is a separate enterprise licence.
 
-The architecture and evaluation are described in the [technical report](https://arxiv.org/abs/2604.08412).
-
-> Naming note: the report was published under the system's earlier name, Selective Attention System (SAS). It describes the same addressee-detection approach this SDK exposes as SAA (Selective Auditory Attention).
-
 ## Ways to integrate
 
 | Shape | Package | Use it when |
