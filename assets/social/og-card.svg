@@ -4,13 +4,13 @@
   <defs>
     <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#151513"/><stop offset="1" stop-color="#151513"/></linearGradient>
     <linearGradient id="side" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#2B2B28"/><stop offset="1" stop-color="#5c574e"/></linearGradient>
-    <linearGradient id="on" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#E15D35"/><stop offset="1" stop-color="#E15D35"/></linearGradient>
+    <linearGradient id="on" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#D9FF00"/><stop offset="1" stop-color="#D9FF00"/></linearGradient>
   </defs>
   <rect width="1200" height="630" fill="url(#bg)"/>
   <g transform="translate(80,150)">
     <text x="0" y="0" font-size="32" font-weight="600" fill="#A8A39A">The addressee layer for voice agents.</text>
     <text x="0" y="80" font-size="52" font-weight="800" fill="#ffffff">It decides which speech is</text>
-    <text x="0" y="140" font-size="52" font-weight="800" fill="#ffffff">meant for your <tspan fill="#E15D35">agent</tspan>.</text>
+    <text x="0" y="140" font-size="52" font-weight="800" fill="#ffffff">meant for your <tspan fill="#D9FF00">agent</tspan>.</text>
     <text x="0" y="198" font-size="23" fill="#A8A39A">Before STT, LLM, or TTS. No wake word. Drop-in for any stack.</text>
     <g transform="translate(0,238)">
       <rect x="0" y="0" width="760" height="44" fill="url(#side)" rx="6"/>
@@ -24,6 +24,6 @@
     <text x="0" y="0" font-size="22" font-weight="700" fill="#ffffff">attentionlabs.ai</text>
     <text x="0" y="28" font-size="14" fill="#A8A39A">github.com/attenlabs/saa-sdk  ·  npm @attenlabs/saa-js  ·  pypi attenlabs-saa</text>
   </g>
-  <circle cx="1100" cy="100" r="14" fill="#E15D35"/>
-  <circle cx="1100" cy="100" r="28" fill="#E15D35" opacity="0.15"/>
+  <circle cx="1100" cy="100" r="14" fill="#D9FF00"/>
+  <circle cx="1100" cy="100" r="28" fill="#D9FF00" opacity="0.15"/>
 </svg>
