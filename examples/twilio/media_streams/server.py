@@ -73,6 +73,12 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional, Union
 
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
 try:
     from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
     from fastapi.responses import JSONResponse, PlainTextResponse, Response

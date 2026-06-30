@@ -53,7 +53,7 @@ await client.start({ videoElement: videoEl });
 
 | Method                      | Description |
 | --------------------------- | ----------- |
-| `start({ videoElement, mediaStream? })` | Start streaming + connect. Calls `getUserMedia` unless `mediaStream` is supplied. `videoElement` is required when video capture is enabled. |
+| `start(options?)` | Start streaming + connect. Pass `{ videoElement }` when video capture is enabled; `{ mediaStream }` to reuse an existing stream. Calls `getUserMedia` unless `mediaStream` is supplied. With both `enableAudio` and `enableVideo` false, call with no args. |
 | `stop()`                    | Stop streaming and disconnect. |
 | `feedAudio(audio, sampleRate?)` | Push externally-captured audio (requires `enableAudio: false`). Accepts Float32 `[-1,1]`, Int16 PCM, or a raw int16 buffer; re-chunked + resampled to the wire's 16 kHz / 100 ms blocks. See [External capture](#external-capture). |
 | `feedVideo(jpeg)`           | Push an externally-captured JPEG frame (requires `enableVideo: false`). Accepts a `Blob`, `ArrayBuffer`, or view. |
@@ -72,13 +72,13 @@ await client.start({ videoElement: videoEl });
 | `prediction`     | `{ cls, rawCls, confidence, source, numFaces, responding }` |
 | `vad`            | `{ probability, isSpeech }` |
 | `state`          | `{ state }` (one of `listening`, `sending`, `cancelled`, `idle`) |
-| `turnReady`      | `{ audioBase64, audioPcm16, durationSec, frames, context }` |
+| `turnReady`      | `{ audioBase64, audioPcm16, durationSec, serverTurnReadyTsMs, frames, context }` |
 | `config`         | `{ modelClass2Threshold }` |
 | `stats`          | `{ rttMs, bufferedAmount, sentVideo, skippedVideo, sentAudio, uptimeMs }` |
 | `interrupt`      | `{ fadeMs, confidence }` |
 | `interjection`   | `{ reason, audioBase64, audioPcm16, durationSec }` |
-| `error`          | `{ title, message, detail }` |
-| `disconnected`   | `{ code, reason }` |
+| `error`          | `{ title, message, detail, code? }` |
+| `disconnected`   | `{ code, reason, wasClean }` |
 
 `warmupComplete` fires once the server model has warmed up and is producing real predictions; use it to drop any loading UI. `prediction.responding` is `true` while your app is mid-response (see `markResponding`), and `interjection` fires when the agent should volunteer after humans go quiet.
 
