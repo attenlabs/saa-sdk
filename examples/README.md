@@ -59,6 +59,16 @@ ElevenLabs runs its agent inside its own sealed WebRTC room, so this sample uses
 
 Needs **attenlabs-saa >= 0.6.0** and **elevenlabs >= 2.45**.
 
+## Vapi WebSocket transport
+
+Vapi exposes a raw PCM16 WebSocket seam, so this sample uses the **streaming SDK's `feed_audio` ingestion**: it captures the local mic with `sounddevice`, feeds every frame to SAA, and streams gated audio to Vapi's WebSocket transport.
+
+| Sample | What it shows | Run |
+|---|---|---|
+| [`vapi/voice_agent/`](./vapi/voice_agent) | SAA gating a Vapi assistant over the WebSocket transport so only device-directed speech reaches the model, via `attenlabs-saa`'s `feed_audio`. | `python agent.py` |
+
+Needs **attenlabs-saa >= 0.6.0**, **sounddevice**, and **websockets**. See [`vapi/README.md`](./vapi/README.md) for setup.
+
 ## Twilio Media Streams
 
 Inbound or outbound PSTN phone calls, gated by SAA before any audio reaches STT or LLM. The adapter in [`twilio/media_streams/server.py`](./twilio/media_streams/server.py) transcodes μ-law 8 kHz Twilio frames to PCM16 16 kHz and feeds them to SAA via `feed_audio`. Only device-directed caller speech reaches the bridge; side talk and the agent's own TTS echo are filtered out. Three reference bridges are included: `LoggingBridge` (no keys, good for smoke-testing), `OpenAIRealtimeBridge`, and `DeepgramOpenAIElevenLabsBridge`.
