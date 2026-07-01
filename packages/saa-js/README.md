@@ -72,7 +72,7 @@ await client.start({ videoElement: videoEl });
 | `prediction`     | `{ cls, rawCls, confidence, source, numFaces, responding }` |
 | `vad`            | `{ probability, isSpeech }` |
 | `state`          | `{ state }` (one of `listening`, `sending`, `cancelled`, `idle`) |
-| `turnReady`      | `{ audioBase64, audioPcm16, durationSec, frames, context }` |
+| `turnReady`      | `{ audioBase64, audioPcm16, durationSec, serverTurnReadyTsMs, frames, context }` — see [field types](#turnready-fields) below |
 | `config`         | `{ modelClass2Threshold }` |
 | `stats`          | `{ rttMs, bufferedAmount, sentVideo, skippedVideo, sentAudio, uptimeMs }` |
 | `interrupt`      | `{ fadeMs, confidence }` |
@@ -81,6 +81,24 @@ await client.start({ videoElement: videoEl });
 | `disconnected`   | `{ code, reason }` |
 
 `warmupComplete` fires once the server model has warmed up and is producing real predictions; use it to drop any loading UI. `prediction.responding` is `true` while your app is mid-response (see `markResponding`), and `interjection` fires when the agent should volunteer after humans go quiet.
+
+### `turnReady` fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `audioBase64` | `string` | Turn audio, PCM16 @ 16 kHz mono, base64-encoded. |
+| `audioPcm16` | `Int16Array` | Same audio, decoded to a typed array. |
+| `durationSec` | `number` | Turn duration in seconds. |
+| `serverTurnReadyTsMs` | `number \| null` | Server-clock timestamp (ms) when the turn was emitted; useful for latency measurement. `null` on older servers that don't send it. |
+| `frames` | `Array<{ tsOffsetS: number; imageBase64: string }>` | Video frames captured during the turn. Empty array in audio-only mode. `tsOffsetS` is seconds from turn start. |
+| `context` | `string \| null` | Set by the server for special cases, e.g. `"interjection_follow_up"`. `null` for a normal turn. |
+
+```ts
+client.on("turnReady", (turn) => {
+  yourSTT.send(turn.audioBase64);
+  console.log(`turn was ${turn.durationSec}s, ${turn.frames.length} video frames`);
+});
+```
 
 ## LLM integration
 
