@@ -75,7 +75,7 @@ pip install saa-livekit-client     # Python (LiveKit)
 pip install saa-pipecat-client     # Python (Pipecat on Daily)
 ```
 
-Get an API key at [attentionlabs.ai/dashboard](https://attentionlabs.ai/dashboard).
+Get an API key at [attentionlabs.ai/dashboard](https://attentionlabs.ai/dashboard/).
 
 ## Streaming SDK
 

@@ -73,7 +73,7 @@ One env file, [`.env`](./.env.example) in this directory:
 
 | Key | Purpose |
 |---|---|
-| `SAA_API_KEY` | Your attention labs API key. Get one at [attentionlabs.ai/dashboard](https://attentionlabs.ai/dashboard). |
+| `SAA_API_KEY` | Your attention labs API key. Get one at [attentionlabs.ai/dashboard](https://attentionlabs.ai/dashboard/). |
 | `ELEVENLABS_API_KEY` | ElevenLabs API key |
 | `ELEVENLABS_AGENT_ID` | The agent to talk to |
 
