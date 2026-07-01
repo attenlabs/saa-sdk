@@ -74,7 +74,7 @@ One env file, [`.env.example`](./.env.example) in this directory:
 
 | Variable | Purpose |
 |---|---|
-| `SAA_API_KEY` | SAA authentication token, get one at [attentionlabs.ai/dashboard](https://attentionlabs.ai/dashboard) |
+| `SAA_API_KEY` | SAA authentication token, get one at [attentionlabs.ai/dashboard](https://attentionlabs.ai/dashboard/) |
 | `SAA_THRESHOLD` | Gate sensitivity, 0..1 (default `0.7`) |
 | `TWILIO_ACCOUNT_SID` | Twilio account SID, used for webhook signature validation |
 | `TWILIO_AUTH_TOKEN` | Twilio auth token, required for `X-Twilio-Signature` validation and outbound REST calls |
