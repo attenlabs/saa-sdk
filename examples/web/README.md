@@ -64,6 +64,11 @@ The LLM bridge is deliberately part of this demo, not the SDK, swap in whichever
 Try three send thresholds and keep the one that performs best: `0.6`, `0.77`, `0.88`.
 Raise it for fewer false triggers, lower it to catch borderline speech. Drag the threshold slider, or call `client.setThreshold(v)`.
 
+## Known limitations
+
+- **Mic/camera permission is requested before the token is validated.** `client.start()` calls `getUserMedia()` before the broker `/allocate` call checks the token, so an invalid token still triggers a real permission prompt. If you only want to test auth, expect the browser to ask for mic/camera access first.
+- **No automatic reconnect.** The SDK does not retry the WebSocket on a network drop. A clean close shows a `Disconnected — …` toast and ends the session (mic/camera released, UI reset to the Setup panel); a stalled-but-open connection only surfaces a non-actionable `Connection Stalled` toast. Either way, click **Connect** again to start a new session — there is no resume.
+
 ## Security note
 
 This demo accepts the OpenAI API key in the browser (typed into the UI or passed via URL) for simplicity. **Never do that in production**, always proxy the Realtime connection through a server you control so the key never reaches the client.
