@@ -1,6 +1,6 @@
 """SAA-gated OpenAI Realtime voice agent for the web demo.
 
-One-key talkback. Cascaded variant lives in `../voice_agent_cascaded/`.
+One-key talkback.
 
 Turn-taking is owned by SAA, not by OpenAI:
 
