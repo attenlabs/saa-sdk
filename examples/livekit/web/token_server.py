@@ -1,8 +1,6 @@
-# minimal dev token endpoint for the SAA + LiveKit web demo — NOT for production
+# minimal dev token endpoint for the SAA + LiveKit web demo
 # mints a browser LiveKit join token and serves the static files
-#
-# SAA is summoned by the voice-agent worker in the room, NOT here — run one of
-# examples/livekit/voice_agent_cascaded or voice_agent_realtime in the same
+
 # LiveKit project alongside this demo. The agent owns the SAA session and
 # answers you; this server just lets the browser join the room.
 import os

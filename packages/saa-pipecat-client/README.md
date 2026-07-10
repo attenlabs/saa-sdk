@@ -130,7 +130,7 @@ Environment: `SAA_API_KEY`, `DAILY_API_KEY`.
 |---|---|---|
 | `PredictionEvent` | every 250 ms | `raw_class`, `aligned_class` (0/1/2), `confidence`, `source`, `num_faces`, `responding` |
 | `VADEvent` | every 250 ms | `is_speech`, `probability` |
-| warmup | model warmed up, predictions begin | none |
+| `warmup_complete` | model warmed up, predictions begin (callback `on_warmup`) | none |
 | listening_start / listening_cancelled | state edges | none |
 | `TurnReadyEvent` | end of user turn | `audio_pcm16`, `duration`, `frames`, `context` |
 | `InterruptEvent` | user barges in during AI playback | `confidence` |
@@ -167,6 +167,7 @@ a single consumer-side event handler can serve both transports:
 | Type | Direction | Carries |
 |---|---|---|
 | `started` | down | bot online |
+| `warmup_complete` | down (edge) | none — model warmed up, first real prediction |
 | `prediction` | down (4 Hz) | `class`, `aligned_class`, `confidence`, `source`, `num_faces` |
 | `vad` | down (4 Hz) | `is_speech`, `probability` |
 | `state` | down (edge) | `state` ∈ {`listening`, `cancelled`} |

@@ -1,6 +1,6 @@
-# dev token server only — a pure LiveKit token minter.
-# SAA is summoned by the voice-agent worker in the room (voice_agent_cascaded /
-# voice_agent_realtime), so this demo needs no saa-livekit-client / livekit-agents.
+# dev token server only
+# SAA is summoned by the voice-agent worker in the room (voice_agent_realtime),
+# so this demo needs no saa-livekit-client / livekit-agents.
 livekit-api>=1.0
 fastapi>=0.110
 uvicorn>=0.27

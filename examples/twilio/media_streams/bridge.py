@@ -5,7 +5,7 @@ a :class:`Bridge` is the seam between it and your STT / LLM / TTS stack.
 
 Lifecycle, per call:
 
-    session = TwilioCallSession(...)        # adapter creates one per call
+    session = _TwilioCallSession(...)       # adapter creates one per call
     await bridge.open(ctx, session)         # adapter hands the session in
 
     # 0+ on_speech calls as the caller talks (gated by SAA)

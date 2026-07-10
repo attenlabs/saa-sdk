@@ -92,7 +92,8 @@ if __name__ == "__main__":
 
 That's the whole integration. Works with any LiveKit pipeline, including `RealtimeModel`
 speech-to-speech. Runnable variants are in the [`examples/livekit/`](https://github.com/attenlabs/saa-sdk/tree/main/examples/livekit)
-samples. (`WorkerOptions(entrypoint_fnc=...)` also works on 1.5.x, the older idiom.)
+samples. These need `livekit-agents>=1.0`, verified on the current 1.5.x/1.6.x line.
+(`WorkerOptions(entrypoint_fnc=...)` also works and is the older idiom.)
 
 ## Greenfield, `build_attention_entrypoint`
 
@@ -139,11 +140,11 @@ Each is delivered through an `@engine.on_*` callback: `on_prediction`, `on_vad`,
 ## Upstream actions
 
 ```python
-await attention.mute()                       # stop feeding mic to processor
-await attention.unmute()
-await attention.responding_start()           # AI is now speaking
-await attention.responding_stop()
-await attention.set_threshold(0.65)          # model class-2 confidence threshold
+await engine.mute()                       # stop feeding mic to processor
+await engine.unmute()
+await engine.responding_start()           # AI is now speaking
+await engine.responding_stop()
+await engine.set_threshold(0.65)          # model class-2 confidence threshold
 ```
 
 These are routed only to the SAA agent (`destination_identities=[...]`)

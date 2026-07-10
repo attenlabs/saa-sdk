@@ -9,7 +9,7 @@ ElevenLabs runs its agent inside its own sealed WebRTC room, so this sample uses
 1. ElevenLabs' Python SDK exposes `AudioInterface`, a clean 16-bit-PCM seam for the user mic and the agent's TTS.
 2. The sample wraps it and feeds the user mic to SAA via [`attenlabs-saa`](../../packages/saa-py)'s `feed_audio()` (the SDK is in feed mode: `enable_audio=False`, it captures nothing itself).
 3. SAA classifies each frame and emits `prediction` / `vad` / `interrupt` events.
-4. The sample gates the agent on those events and forwards only device-directed audio onward.
+4. The sample gates the agent on those events: it forwards only device-directed audio onward and nothing between turns, then streams a short silence tail once SAA reports the turn is done so ElevenLabs' turn model endpoints and replies.
 
 ## Samples
 
