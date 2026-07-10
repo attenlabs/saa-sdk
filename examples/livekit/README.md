@@ -18,7 +18,7 @@ The whole client ([`packages/saa-livekit-client`](../../packages/saa-livekit-cli
 | [`voice_agent_realtime/`](./voice_agent_realtime) | OpenAI Realtime (speech-to-speech), + SAA | `python agent.py dev` |
 | [`web/`](./web) | Vanilla HTML + `livekit-client` browser client rendering the prediction overlay | `python -m uvicorn token_server:app` |
 
-All target **LiveKit Agents 1.5.x** using the `AgentServer` + `@server.rtc_session()` shape. (`WorkerOptions(entrypoint_fnc=...)` also works on 1.5.x and is the older idiom.)
+All need `livekit-agents>=1.0`, verified on the current 1.5.x/1.6.x line, using the `AgentServer` + `@server.rtc_session()` shape. (`WorkerOptions(entrypoint_fnc=...)` also works and is the older idiom.)
 
 ## Quick start: realtime agent + web client
 
