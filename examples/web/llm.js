@@ -1,21 +1,11 @@
-// OpenAI Realtime bridge — sample-app only, NOT part of the SDK.
-// The SDK emits `turnReady` with base64 PCM16 + optional JPEG frames;
-// this helper wraps them into OpenAI's input_audio / input_image content
-// parts and plays the audio response back through WebAudio.
-
 const REALTIME_BASE = "wss://api.openai.com/v1/realtime";
-// TTFB probe: gpt-realtime-mini is a smaller, NON-reasoning realtime model, so
-// it has lower time-to-first-audio than gpt-realtime-2 (at some quality cost).
-// To trade back for quality, set DEFAULT_MODEL = "gpt-realtime-2" and
-// DEFAULT_REASONING_EFFORT = "minimal" (mini has no reasoning, so the reasoning
-// field is omitted whenever the effort is null).
+// gpt-realtime-2 with reasoning off (effort null)
 const DEFAULT_MODEL = "gpt-realtime-2";
 const DEFAULT_REASONING_EFFORT = null; // null | "minimal" | "low" | "medium" | "high" | "xhigh"
 const DEFAULT_VOICE = "sage";
 const OUTPUT_SAMPLE_RATE = 24000;
 const DEFAULT_GAIN_DB = 6;
-// Option A — stream each audio delta as it arrives (gapless) instead of
-// buffering until response.done. Flip to false for the buffered fallback.
+
 const STREAMING_PLAYBACK = true;
 const STREAM_LEAD_IN = 0.06; // s of scheduling headroom before the first chunk
 
@@ -24,8 +14,6 @@ export class RealtimeLLMBridge {
     if (!options?.apiKey) throw new Error("RealtimeLLMBridge: apiKey required");
     this.apiKey = options.apiKey;
     this.model = options.model ?? DEFAULT_MODEL;
-    // Reasoning effort only applies to reasoning-capable models (gpt-realtime-2);
-    // null omits the field, which is required for non-reasoning models like mini.
     this.reasoningEffort = options.reasoningEffort ?? DEFAULT_REASONING_EFFORT;
     this.url = options.url ?? `${REALTIME_BASE}?model=${this.model}`;
     this.voice = options.voice ?? DEFAULT_VOICE;
@@ -42,31 +30,20 @@ export class RealtimeLLMBridge {
     this.responseTimer = null;
     this.closed = false;
     this.listeners = new Map();
-    // Held during _playback so interrupt() can fade the gain to 0 and stop
-    // the source. Cleared in src.onended.
+    // active playback nodes; interrupt() fades/stops them, cleared in src.onended
     this._activeCtx = null;
     this._activeSrc = null;
     this._activeGain = null;
-    // True between interrupt() and the next sendAudioB64/greet. Causes the
-    // next _playback to skip — needed because OpenAI may finish flushing
-    // the in-flight response after we've sent response.cancel, and we don't
-    // want that stale audio to start playing right after we faded.
+    // skip the next playback: OpenAI may flush in-flight audio after response.cancel
     this._suppressNextPlayback = false;
-    // OpenAI's response id, set on response.created and cleared on response.done.
-    // Used by interrupt() to decide whether to send response.cancel — sending
-    // it once response.done has landed yields the response_cancel_not_active
-    // 400 error from the API and serves no purpose.
+    // current response id, or null between responses; interrupt() only cancels while set
     this._activeResponseId = null;
-    // P0 latency instrumentation: perf-clock stamps across one response.
-    // responseTimer (send) is set in _flush/_flushGreeting; these mark the
-    // LLM ack and first audio token so _logTurnTiming can break down the turn.
+    // latency stamps for one response (see _logTurnTiming)
     this._responseCreatedAt = null;
     this._firstAudioAt = null;
-    // P0 context-loss: true once a socket has opened, so a later _connect is
-    // recognized as a reconnect (OpenAI server-side history reset).
+    // true once a socket has opened, so a later _connect is a reconnect (history reset)
     this._hasConnected = false;
-    // Option A streaming playback: persistent AudioContext + active stream
-    // record (keyed by responseId). null when nothing is streaming.
+    // streaming playback: persistent AudioContext + active stream record, null when idle
     this._playCtx = null;
     this._stream = null;
   }
@@ -97,7 +74,7 @@ export class RealtimeLLMBridge {
     this.pendingAudio = b64;
     this.pendingFrames = Array.isArray(frames) ? frames : [];
     this.closed = false;
-    // New user turn — clear any interrupt-suppression so the next response plays.
+    // new user turn — clear interrupt-suppression so the next response plays
     this._suppressNextPlayback = false;
     if (this.sessionReady && this.ws?.readyState === WebSocket.OPEN) {
       this._flush();
@@ -106,8 +83,7 @@ export class RealtimeLLMBridge {
     this._connect();
   }
 
-  // Trigger an audio response from text instructions alone (no user audio).
-  // Useful for proactive greetings after warmup.
+  // audio response from text instructions alone (no user audio), e.g. a greeting
   greet(instructions) {
     this.pendingGreeting = instructions;
     this.closed = false;
@@ -118,10 +94,8 @@ export class RealtimeLLMBridge {
     this._connect();
   }
 
-  // Open the WS + run session.update without sending any audio or response
-  // request. Lets the page mask the ~300-800ms WS handshake + ~100ms
-  // session.update behind the SAS warmup window so the first greet/send is
-  // near-instant. Safe to call repeatedly — no-ops if already connecting.
+  // open the WS + session.update early so the first greet/send isn't blocked on
+  // the handshake; no-ops if already connecting
   prewarm() {
     this.closed = false;
     this._connect();
@@ -131,9 +105,7 @@ export class RealtimeLLMBridge {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
     }
-    // A second connect means the prior LLM socket dropped — OpenAI's
-    // server-side conversation history is gone, so the next turn starts fresh.
-    // Flag it so context loss is visible, not silent.
+    // a reconnect means OpenAI dropped the conversation history; surface it
     if (this._hasConnected) {
       console.warn("[llm] opening new LLM session — conversation context will reset (prior socket dropped)");
       this._emit("sessionReset", { cause: "reconnect" });
@@ -141,8 +113,7 @@ export class RealtimeLLMBridge {
     this._hasConnected = true;
     this.sessionReady = false;
 
-    // OpenAI accepts the API key as a WS subprotocol for browser clients.
-    // Note: exposes the key to the browser — only do this for local demos.
+    // API key as a WS subprotocol — exposes it to the browser, local demos only
     this.ws = new WebSocket(this.url, [
       "realtime",
       `openai-insecure-api-key.${this.apiKey}`,
@@ -166,8 +137,7 @@ export class RealtimeLLMBridge {
           },
         },
       };
-      // Lower reasoning effort = lower TTFB, but only valid on reasoning-capable
-      // models. Omitted when null (e.g. gpt-realtime-mini, which has no reasoning).
+      // reasoning only applies to capable models; omitted when null
       if (this.reasoningEffort) session.reasoning = { effort: this.reasoningEffort };
       this.ws.send(JSON.stringify({ type: "session.update", session }));
     };
@@ -255,14 +225,11 @@ export class RealtimeLLMBridge {
         }
         break;
       case "session.created":
-        // Server-default config; wait for session.updated before flushing.
+        // wait for session.updated before flushing
         break;
       case "response.created":
-        // OpenAI response lifecycle starts here. A response can contain
-        // multiple output_items (e.g., reasoning + message + follow-up),
-        // each producing its own output_audio.done. We accumulate audio
-        // across all items and play once on response.done so we never get
-        // two playbacks for one response.
+        // a response may span multiple output items; accumulate audio and
+        // play once on response.done so one response never plays twice
         this._activeResponseId = data.response?.id ?? "unknown";
         this._responseCreatedAt = performance.now();
         this._firstAudioAt = null;
@@ -277,16 +244,14 @@ export class RealtimeLLMBridge {
         break;
       case "response.audio.done":
       case "response.output_audio.done":
-        // Per-output-item audio boundary — informational only. Playback is
-        // deferred to response.done so multi-output responses concatenate.
+        // per-item boundary only; playback waits for response.done
         break;
       case "response.audio_transcript.done":
       case "response.output_audio_transcript.done":
         this._emit("transcript", data.transcript);
         break;
       case "response.done": {
-        // End of the whole response, regardless of how many output items it
-        // contained. Status can be: completed, cancelled, failed, incomplete.
+        // whole response finished (completed | cancelled | failed | incomplete)
         const status = data.response?.status;
         this._activeResponseId = null;
         this._logTurnTiming();
@@ -304,16 +269,13 @@ export class RealtimeLLMBridge {
         } else if (this.audioChunks.length > 0) {
           this._playback();
         } else {
-          // Response ended with no audio buffered (cancelled-early, empty, or
-          // tool-call-only). Emit speakingEnd so the consumer clears any
-          // "pending AI response" state.
+          // no audio (cancelled early / empty / tool-only) — still end the turn
           this._emit("speakingEnd");
         }
         break;
       }
       case "error":
-        // Filter the expected race: interrupt's response.cancel reached
-        // OpenAI after response.done had already arrived. Not actionable.
+        // expected race: interrupt's response.cancel arrived after response.done
         if (data.error?.code === "response_cancel_not_active") {
           console.debug("[llm] response.cancel raced response.done — ignored");
           break;
@@ -341,10 +303,7 @@ export class RealtimeLLMBridge {
       console.log(`[llm] response time: ${dt.toFixed(2)}s`);
     }
 
-    // Cancelled response audio arriving after we've already interrupted:
-    // OpenAI may finish flushing what's in-flight before honoring
-    // response.cancel, so we discard the buffered audio instead of starting
-    // fresh playback on top of the user's new turn.
+    // drop audio that arrived after an interrupt instead of playing over the new turn
     if (this._suppressNextPlayback) {
       this._suppressNextPlayback = false;
       console.log("[llm] suppressed stale audio.done (post-interrupt)");
@@ -357,9 +316,7 @@ export class RealtimeLLMBridge {
       return;
     }
 
-    // Defense in depth: if a previous response is still playing (its
-    // src.onended hasn't fired yet), stop it before starting a new one —
-    // otherwise two AudioBufferSources end up running in parallel.
+    // stop any still-playing response so two sources don't overlap
     this._stopActivePlayback();
 
     this._emit("speakingStart");
@@ -376,7 +333,7 @@ export class RealtimeLLMBridge {
     gain.gain.value = Math.pow(10, this.gainDb / 20);
     src.connect(gain).connect(ctx.destination);
 
-    // Stash on the instance so interrupt() can fade and stop mid-playback.
+    // kept so interrupt() can fade/stop mid-playback
     this._activeCtx = ctx;
     this._activeSrc = src;
     this._activeGain = gain;
@@ -393,9 +350,7 @@ export class RealtimeLLMBridge {
     src.start();
   }
 
-  // Stop any in-flight playback and tear down its AudioContext. Called from
-  // _playback (defense against overlapping responses) and interrupt's hard-
-  // failure fallback. Safe to call when nothing is active.
+  // stop in-flight playback and close its AudioContext; safe when nothing is active
   _stopActivePlayback() {
     const src = this._activeSrc;
     const ctx = this._activeCtx;
@@ -411,12 +366,9 @@ export class RealtimeLLMBridge {
     }
   }
 
-  // ── Option A: incremental streaming playback ──────────────────────────
-  // Deltas are scheduled back-to-back on the AudioContext clock so playback
-  // starts at the first chunk. All deltas of one response share a responseId
-  // and feed ONE gapless stream (the anti-overlap invariant); a new responseId
-  // stops the prior stream first.
-
+  // incremental streaming playback
+  // deltas are scheduled back-to-back on the AudioContext clock so audio
+  // starts at the first chunk; all deltas of one response feed one stream
   _ensurePlayCtx() {
     if (!this._playCtx) this._playCtx = new AudioContext({ sampleRate: OUTPUT_SAMPLE_RATE });
     if (this._playCtx.state === "suspended") this._playCtx.resume().catch(() => {});
@@ -521,21 +473,14 @@ export class RealtimeLLMBridge {
     this._emit("speakingEnd");
   }
 
-  // Fade the currently-playing response to silence over `fadeMs` and (when
-  // a response is still in flight) cancel upstream OpenAI generation.
-  // Wire up to client.on("interrupt", (e) => llm.interrupt(e.fadeMs)) when
-  // building a barge-in-capable demo.
+  // fade playback to silence over fadeMs and cancel any in-flight OpenAI response
   interrupt(fadeMs = 500) {
     if (STREAMING_PLAYBACK) { this._streamInterrupt(fadeMs); return; }
-    // Drop any buffered chunks that haven't been concatenated into a playback
-    // buffer yet, and suppress the audio.done that OpenAI may still deliver
-    // after we've sent response.cancel.
+    // drop buffered chunks and suppress the audio.done that may still arrive
     this.audioChunks = [];
     this._suppressNextPlayback = true;
 
-    // Cancel upstream — only if a response is actually in flight. Once
-    // response.done has landed (we're just playing buffered audio locally),
-    // OpenAI rejects response.cancel with response_cancel_not_active.
+    // cancel upstream only while a response is in flight (else the API rejects it)
     if (this._activeResponseId && this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
         this.ws.send(JSON.stringify({ type: "response.cancel" }));
@@ -543,8 +488,7 @@ export class RealtimeLLMBridge {
     }
 
     if (!this._activeSrc || !this._activeGain || !this._activeCtx) {
-      // Nothing currently playing — still emit speakingEnd so the consumer
-      // unwinds responding state. Matches the natural-end code path.
+      // nothing playing — still emit speakingEnd so the consumer unwinds
       this._emit("speakingEnd");
       return;
     }
@@ -566,17 +510,10 @@ export class RealtimeLLMBridge {
       this._emit("speakingEnd");
       return;
     }
-    // src.onended will fire when stop() lands and emit speakingEnd.
+    // src.onended fires on stop() and emits speakingEnd
   }
 
-  // P0 latency breakdown for one response, logged at response.done.
-  // Intervals: sent→created = LLM ack (response.created), sent→first_audio =
-  // time to first audio token, first_audio→done = how long audio sat before
-  // we play it. `buffered` is the UPPER BOUND on what Option A (incremental
-  // playback) could reclaim — actual savings are a bit less since audio
-  // decode + scheduling at playback start aren't subtracted. All stamps are
-  // perf-clock (client-side, skew-free); bridge-internal latency, separate
-  // from the SDK's server→client transit.
+  // per-response latency breakdown, logged at response.done
   _logTurnTiming() {
     const sent = this.responseTimer;
     if (sent == null) return;
@@ -590,7 +527,7 @@ export class RealtimeLLMBridge {
     const total = now - sent;
     const tail = STREAMING_PLAYBACK
       ? `time-to-sound≈${ms(ttfb)}ms (streaming)`
-      : `(Option-A headroom ≤${ms(buffered)}ms)`;
+      : `(headroom ≤${ms(buffered)}ms)`;
     console.log(
       `[llm-timing] sent→created=${ms(ack)}ms ttfb(sent→first_audio)=${ms(ttfb)}ms ` +
       `buffered(first_audio→done)=${ms(buffered)}ms total=${ms(total)}ms ${tail}`,
