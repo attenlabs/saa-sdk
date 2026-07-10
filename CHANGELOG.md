@@ -9,6 +9,12 @@ Published registries:
 - [`saa-livekit-client`](https://pypi.org/project/saa-livekit-client/) on PyPI
 - [`saa-pipecat-client`](https://pypi.org/project/saa-pipecat-client/) on PyPI
 
+## 2026-07-10
+
+`saa-pipecat-client` 0.3.4
+
+- Fix leaking SessionHandle and improper close
+
 ## 2026-06-25
 
 ### `attenlabs-saa` 0.7.1

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "saa-pipecat-client"
-version = "0.3.3"
+version = "0.3.4"
 description = "Pipecat / Daily client for SAA, the addressee layer for voice agents — gates your Pipecat pipeline to respond only to speech directed at it."
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
