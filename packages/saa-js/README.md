@@ -44,10 +44,16 @@ await client.start({ videoElement: videoEl });
 | `initialThreshold` | number   | `0.7`                                | Confidence threshold for predictions (0-1). |
 | `enableAudio`      | boolean  | `true`                               | Capture the mic internally. Set `false` to push audio via `feedAudio()`. |
 | `enableVideo`      | boolean  | `true`                               | Capture the camera internally. Set `false` for audio-only or to push frames via `feedVideo()`. |
+| `autoReconnect`    | boolean  | `true`                               | Reconnect with backoff after an unclean mid-session drop. Set `false` to surface the drop as an `error` instead. |
 | `serverProfile`    | string   | inferred                             | Server processor variant. Defaults to `"audio_only"` when `enableVideo: false`, else the full processor. Pass `"default"` to force the full processor without local video. |
+| `workletUrl`       | string   | bundled                              | URL of the audio-capture AudioWorklet module. Override only when self-hosting the worklet. |
 | `video.width`      | number   | `1920`                               | Capture width. |
 | `video.height`     | number   | `1080`                               | Capture height. |
 | `video.jpegQuality`| number   | `0.5`                                | JPEG quality (0-1). |
+| `audio.targetSampleRate` | number | `16000`                         | Sample rate audio is resampled to before sending. |
+| `audio.onAudioFrame`| function | none                                | Called with each captured 16-bit PCM frame (`ArrayBuffer`). |
+| `audio.onWorkletError`| function | none                              | Called when the capture worklet throws (also emitted as an `error` event). |
+| `audio.onContextStateChange`| function | none                        | Called with the `AudioContext` state string on change (e.g. `suspended`, `interrupted`). |
 
 ## Methods
 
@@ -60,6 +66,8 @@ await client.start({ videoElement: videoEl });
 | `mute()` / `unmute()`       | Pause or resume audio. |
 | `markResponding(boolean)`   | Signal that your app is responding, pauses predictions until finished. |
 | `setThreshold(value)`       | Update the confidence threshold (0-1). |
+| `isConnected`               | Getter — `true` while the WebSocket is open. |
+| `currentThreshold`          | Getter — the current confidence threshold (0-1). |
 | `on(event, listener)`       | Subscribe to an event. Returns an unsubscribe function. |
 
 ## Events
@@ -78,7 +86,9 @@ await client.start({ videoElement: videoEl });
 | `interrupt`      | `{ fadeMs, confidence }` |
 | `interjection`   | `{ reason, audioBase64, audioPcm16, durationSec }` |
 | `error`          | `{ title, message, detail }` |
-| `disconnected`   | `{ code, reason }` |
+| `disconnected`   | `{ code, reason, wasClean }` |
+| `reconnecting`   | `{ attempt, delaySec, lastCode }` |
+| `reconnected`    | `{ attempts }` |
 
 `warmupComplete` fires once the server model has warmed up and is producing real predictions; use it to drop any loading UI. `prediction.responding` is `true` while your app is mid-response (see `markResponding`), and `interjection` fires when the agent should volunteer after humans go quiet.
 

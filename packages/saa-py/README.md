@@ -71,6 +71,7 @@ client = AttentionClient(
     enable_audio=True,             # Set False to skip mic capture
     enable_video=True,             # Set False to skip webcam capture
     server_profile=None,           # Override server profile; auto "audio_only" when enable_video=False
+    auto_reconnect=True,           # Auto-reconnect with backoff after a retriable drop
 )
 ```
 
@@ -102,10 +103,10 @@ client = AttentionClient(
 | `unmute()`                   | Resumes server-side turn/VAD processing. |
 | `mark_responding(bool)`      | Tell the server an LLM response is in flight. Server stops emitting predictions while `True`. |
 | `set_threshold(value: float)` | Update device-class confidence threshold (0..1). Server acks via `config` event. |
-| `feed_audio(audio, *, sample_rate=16000)` | Stream audio captured by another stack instead of the SDK's own mic. Requires `enable_audio=False`. See [Feeding external audio](#feeding-external-audio). |
-| `feed_video(frame)` | Push an externally-captured frame instead of the SDK's own camera. Requires `enable_video=False`. Accepts pre-encoded JPEG `bytes` or a raw `np.ndarray` (BGR, JPEG-encoded internally). See [Feeding external audio](#feeding-external-audio). |
+| `feed_audio(audio, *, sample_rate=16000)` | Stream audio captured by another stack instead of the SDK's own mic. Requires `enable_audio=False`. See [Feeding external audio and video](#feeding-external-audio-and-video). |
+| `feed_video(frame)` | Push an externally-captured frame instead of the SDK's own camera. Requires `enable_video=False`. Accepts pre-encoded JPEG `bytes` or a raw `np.ndarray` (BGR, JPEG-encoded internally). See [Feeding external audio and video](#feeding-external-audio-and-video). |
 
-### Feeding external audio
+### Feeding external audio and video
 
 When another stack already owns the microphone, an ElevenLabs / OpenAI Realtime `AudioInterface` tap, a Twilio media stream, a game engine, construct the client with `enable_audio=False` and push frames in with `feed_audio()` instead of letting the SDK open its own mic:
 
@@ -157,6 +158,8 @@ def handle(event):
 | `@on_interjection`    | `InterjectionEvent`                                                      | Proactive AI volunteer after humans go quiet |
 | `@on_error`           | `AttentionErrorEvent`                                                    | Connection, auth, or server error       |
 | `@on_disconnected`    | `DisconnectedEvent`                                                      | WebSocket closes                        |
+| `@on_reconnecting`    | `ReconnectingEvent`                                                      | Before each auto-reconnect attempt      |
+| `@on_reconnected`     | `ReconnectedEvent`                                                       | Auto-reconnect succeeded                |
 
 ### Event types
 
@@ -244,6 +247,8 @@ title: str                  # error category ("Auth Failed", "Connection Stalled
 message: str                # human-readable message
 detail: str | None = None   # technical detail
 code: int | None = None     # WebSocket close code, if applicable
+kind: str | None = None     # transport | auth | rate_limit | audio | server | environment
+retriable: bool = False     # True if the SDK will (or you could) retry
 ```
 
 #### `DisconnectedEvent`
@@ -252,6 +257,20 @@ code: int | None = None     # WebSocket close code, if applicable
 code: int        # WebSocket close code
 reason: str      # close reason
 was_clean: bool  # True if code == 1000
+```
+
+#### `ReconnectingEvent`
+
+```python
+attempt: int      # 1-based attempt counter
+delay_s: float    # backoff delay before this attempt
+last_code: int    # close code that triggered the reconnect
+```
+
+#### `ReconnectedEvent`
+
+```python
+attempts: int     # attempts it took to reconnect
 ```
 
 ---
@@ -307,16 +326,19 @@ See [**saa-py-demo**](https://github.com/attenlabs/saa-py-demo) for a full worki
 
 ## Threading model
 
-The SDK manages four threads internally:
+The SDK manages these threads internally:
 
-| thread           | purpose                            |
-| ---------------- | ---------------------------------- |
-| `saa-ws`         | WebSocket send/receive             |
-| `saa-heartbeat`  | JSON pings every 5s, stats every 10s |
-| `saa-camera`     | JPEG capture at 4 fps (250 ms)     |
-| *(sounddevice)*  | Audio callback at native sample rate, resampled to 16 kHz |
+| thread             | purpose                            |
+| ------------------ | ---------------------------------- |
+| `saa-ws`           | WebSocket send/receive             |
+| `saa-heartbeat`    | JSON pings every 5s, stats every 10s |
+| `saa-camera-read`  | Drains frames off the webcam into a latest-frame buffer |
+| `saa-camera-send`  | JPEG-encodes the latest frame and sends it at 4 fps (250 ms) |
+| *(sounddevice)*    | Audio callback at native sample rate, resampled to 16 kHz |
 
-All event callbacks fire on `saa-ws` or `saa-heartbeat`. Don't block them, offload heavy work to your own thread.
+Camera capture (when `enable_video=True`) runs as two threads — a reader and a sender — so a slow encode never stalls frame acquisition. Two more threads spawn transiently: `saa-reconnect` runs the backoff loop while auto-reconnecting, and `saa-clientlog` posts the HTTP-beacon fallback for `send_client_log()`.
+
+All event callbacks fire on `saa-ws`, `saa-heartbeat`, or `saa-reconnect` (reconnect events). Don't block them, offload heavy work to your own thread.
 
 ## License
 
