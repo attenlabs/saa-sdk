@@ -71,6 +71,7 @@ client = AttentionClient(
     enable_audio=True,             # Set False to skip mic capture
     enable_video=True,             # Set False to skip webcam capture
     server_profile=None,           # Override server profile; auto "audio_only" when enable_video=False
+    auto_reconnect=True,           # Reconnect on retriable WebSocket drops
 )
 ```
 
@@ -157,6 +158,8 @@ def handle(event):
 | `@on_interjection`    | `InterjectionEvent`                                                      | Proactive AI volunteer after humans go quiet |
 | `@on_error`           | `AttentionErrorEvent`                                                    | Connection, auth, or server error       |
 | `@on_disconnected`    | `DisconnectedEvent`                                                      | WebSocket closes                        |
+| `@on_reconnecting`    | `ReconnectingEvent`                                                      | Backing off before a reconnect attempt  |
+| `@on_reconnected`     | `ReconnectedEvent`                                                       | WebSocket reopened after a drop         |
 
 ### Event types
 
@@ -244,6 +247,22 @@ title: str                  # error category ("Auth Failed", "Connection Stalled
 message: str                # human-readable message
 detail: str | None = None   # technical detail
 code: int | None = None     # WebSocket close code, if applicable
+kind: str | None = None     # transport | auth | rate_limit | audio | server | environment
+retriable: bool = False     # whether auto_reconnect will retry this class of error
+```
+
+#### `ReconnectingEvent`
+
+```python
+attempt: int        # 1-based attempt counter
+delay_s: float      # backoff before this attempt
+last_code: int      # close code that triggered the reconnect
+```
+
+#### `ReconnectedEvent`
+
+```python
+attempts: int       # attempts it took to reconnect
 ```
 
 #### `DisconnectedEvent`
