@@ -119,7 +119,14 @@ async def handle_turn(event: TurnReadyEvent, transport):
 run = build_attention_runner(on_turn=handle_turn)
 # pass `transport` and `task` you built; the factory mints the token,
 # starts the session, and wires the engine.
-engine = await run(room_url, room_name, human_identity, transport, task)
+engine, session = await run(room_url, room_name, human_identity, transport, task)
+
+runner = PipelineRunner()
+try:
+    await runner.run(task)
+finally:
+    await engine.stop()
+    await session.stop()
 ```
 
 Environment: `SAA_API_KEY`, `DAILY_API_KEY`.
