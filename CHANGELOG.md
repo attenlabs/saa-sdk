@@ -9,6 +9,32 @@ Published registries:
 - [`saa-livekit-client`](https://pypi.org/project/saa-livekit-client/) on PyPI
 - [`saa-pipecat-client`](https://pypi.org/project/saa-pipecat-client/) on PyPI
 
+## 2026-06-25
+
+### `attenlabs-saa` 0.7.1
+
+- Cleaner shutdown path and README updates. No API changes.
+
+### `saa-livekit-client` 0.3.3 · `saa-pipecat-client` 0.3.3
+
+- Error handling on startup: surface a clear error if the hosted agent fails to start.
+
+### `saa-livekit-client` 0.3.2 · `saa-pipecat-client` 0.3.2
+
+- Better environment-variable loading/handling; proper startup error if the agent fails; livekit-client stashing improvements plus a cap on the pending-turns dict.
+
+## 2026-06-24
+
+### `@attenlabs/saa-js` 0.7.0
+
+- Network resilience: auto-reconnect with typed `reconnecting` / `reconnected` events, plus client-side logging helpers.
+
+## 2026-06-23
+
+### `attenlabs-saa` 0.7.0
+
+- Network resilience: `auto_reconnect` (default on) with `on_reconnecting` / `on_reconnected` events and full-jitter backoff reconnect; network/broker helpers.
+
 ## 2026-06-19
 
 ### `@attenlabs/saa-js` 0.6.1 · `attenlabs-saa` 0.6.1
