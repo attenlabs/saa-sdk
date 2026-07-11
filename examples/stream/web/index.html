@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SAA + Stream Video</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "saa-js": "./node_modules/@attenlabs/saa-js/dist/index.js",
+          "@stream-io/video-client": "https://esm.sh/@stream-io/video-client"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root">
+      <header>
+        <h1>SAA + Stream Video</h1>
+        <span id="status" class="status">disconnected</span>
+      </header>
+
+      <div id="config-panel">
+        <div class="config-field">
+          <label>SAA Token</label>
+          <input type="text" id="input-token"
+            placeholder="al_live_... (or set SAA_API_KEY in .env)" />
+        </div>
+        <div class="config-field">
+          <label>OpenAI Key <span class="opt">(optional — enables voice AI)</span></label>
+          <input type="text" id="input-openai"
+            placeholder="sk-... (or set OPENAI_API_KEY in .env)" />
+        </div>
+      </div>
+
+      <div id="prediction" data-class="0">
+        <div id="class-label">--</div>
+        <div id="conf-row">
+          <div id="conf-bar"><div id="conf-fill"></div></div>
+          <span id="conf-num">0%</span>
+        </div>
+        <div id="meta">
+          <span id="vad">VAD: off</span>
+          <span id="faces">faces: 0</span>
+          <span id="participants"></span>
+        </div>
+      </div>
+
+      <div id="pred-buffer-wrap">
+        <div class="pred-buffer-title">Recent predictions</div>
+        <ul id="pred-buffer"></ul>
+      </div>
+
+      <div id="video-container">
+        <video id="local-video" autoplay muted playsinline></video>
+      </div>
+
+      <div class="controls">
+        <button id="btn-start">Start</button>
+        <button id="btn-stop" disabled>Stop</button>
+      </div>
+
+      <div id="threshold-row">
+        <label>Threshold <span id="thresh-val">0.85</span></label>
+        <input type="range" min="0" max="100" value="85" id="thresh-slider" />
+      </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
