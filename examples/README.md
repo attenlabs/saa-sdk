@@ -30,22 +30,24 @@ Both need only a `SAA_API_KEY` (the Python demo also accepts `--token`; the web 
 
 ## LiveKit Agents
 
-SAA joins your LiveKit room and gates the session through the `"saa"` data topic. Two samples in [`livekit/`](./livekit):
+SAA joins your LiveKit room and gates the session through the `"saa"` data topic. Three samples in [`livekit/`](./livekit):
 
 | Sample | What it shows | Run |
 |---|---|---|
 | [`livekit/voice_agent_realtime/`](./livekit/voice_agent_realtime) | SAA gating an OpenAI Realtime speech-to-speech agent, with barge-in and proactive interjection. | `python agent.py dev` |
+| [`livekit/voice_agent_factory/`](./livekit/voice_agent_factory) | Minimal greenfield agent via `build_attention_entrypoint`; log-only turn handler. | `python agent.py dev` |
 | [`livekit/web/`](./livekit/web) | A vanilla HTML + `livekit-client` browser client rendering SAA's prediction overlay, plus a dev FastAPI token server. | `uvicorn token_server:app` |
 
 All target **LiveKit Agents 1.5.x** (`AgentServer` + `@server.rtc_session()`). See [`livekit/README.md`](./livekit/README.md) for the shared environment and the integration code.
 
 ## Pipecat (on Daily)
 
-The Pipecat sibling. SAA joins your Daily room and publishes events on Daily's app-message channel under the `"saa"` topic. Your Pipecat pipeline consumes them through `AttentionEngine`, which hooks `DailyTransport.event_handler("on_app_message")`. One sample in [`pipecat/`](./pipecat):
+The Pipecat sibling. SAA joins your Daily room and publishes events on Daily's app-message channel under the `"saa"` topic. Your Pipecat pipeline consumes them through `AttentionEngine`, which hooks `DailyTransport.event_handler("on_app_message")`. Two samples in [`pipecat/`](./pipecat):
 
 | Sample | What it shows | Run |
 |---|---|---|
 | [`pipecat/web/`](./pipecat/web) | A vanilla HTML + `@daily-co/daily-js` browser client rendering SAA's prediction overlay, plus a dev FastAPI token server that creates an ephemeral Daily room. | `uvicorn token_server:app` |
+| [`pipecat/voice_agent_factory/`](./pipecat/voice_agent_factory) | Minimal greenfield bot via `build_attention_runner`; log-only turn handler, creates its own ephemeral Daily room. | `python bot.py` |
 
 Targets **pipecat-ai >= 1.0.0** (the `pipecat.transports.daily.transport` canonical import path) and **daily-python >= 0.19.0**. See [`pipecat/README.md`](./pipecat/README.md) for the shared environment.
 
