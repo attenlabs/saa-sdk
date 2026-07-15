@@ -64,10 +64,9 @@ export class AttentionClient {
   private warmedUp = false;
   private threshold: number;
   private started = false;
-  // Bumped on every start() entry and every stop() entry. An in-flight start()
-  // captures its value and re-checks it after each await; a mismatch means a
+  // Bumped on every start() entry and every stop() entry, mismatch means a
   // stop() (or newer start()) landed mid-startup, so this call must abort and
-  // release whatever it acquired instead of finishing into a phantom session.
+  // release
   private lifecycleEpoch = 0;
 
   // emit "Connection Stalled" at most once per stall episode; reset on pong
@@ -146,8 +145,7 @@ export class AttentionClient {
   async start(options: StartOptions = {}): Promise<void> {
     if (this.started) throw new Error("AttentionClient already started");
     this.started = true;
-    // Claim this startup's generation; the checkpoints after each await below
-    // compare against it to detect an interleaved stop()/start().
+
     const epoch = ++this.lifecycleEpoch;
     // reset reconnect state here (not in stop()) so a late reconnect callback
     // after stop() still sees stopping=true and bails
@@ -209,9 +207,7 @@ export class AttentionClient {
     } catch (err) {
       this.teardownMedia();
       this.started = false;
-      // buildCloseError maps a clean close to null, so a stop() that lands
-      // mid-handshake would otherwise reject start() with a bare null —
-      // normalize so start() always rejects with an Error.
+      // normalize so start() always rejects with an Error
       throw err ?? new Error("start() aborted: connection closed during handshake");
     }
     if (this.lifecycleEpoch !== epoch) return this.abortStart();
@@ -302,7 +298,7 @@ export class AttentionClient {
   async stop(): Promise<void> {
     // Advance the generation FIRST so a start() awaiting mid-startup sees the
     // change at its next checkpoint and aborts instead of resuming into a live
-    // session on a client the caller believes is stopped.
+    // session on a client the caller believes is stopped
     this.lifecycleEpoch++;
     // set stopping FIRST so an in-flight onclose/backoff bails out of reconnect
     this.stopping = true;
@@ -345,10 +341,7 @@ export class AttentionClient {
 
   /**
    * Release whatever the aborted start() acquired up to its current checkpoint
-   * and reject. Only resources this start() had reached are non-null here (the
-   * audio pipeline is built last, the ws before it, media first), so tearing
-   * down each guarded field releases exactly what was live — nothing the
-   * interleaving stop() already cleared, and nothing not yet created.
+   * and reject. 
    */
   private async abortStart(): Promise<never> {
     if (this.audioPipeline) {

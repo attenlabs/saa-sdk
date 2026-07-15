@@ -76,12 +76,8 @@ export async function createAudioPipeline(
 ): Promise<AudioPipeline> {
   const audioCtx = new AudioContext();
 
-  // Everything past the constructor can throw — addModule rejects when the
-  // blob: worklet is CSP-blocked or an ad-blocker/bad workletUrl intercepts
-  // it, and createMediaStreamSource / AudioWorkletNode can throw too. The
-  // context is never returned on a throw, so no caller can close it; without
-  // this catch each failed start() strands a live AudioContext and browsers
-  // hard-cap concurrent contexts, turning a retriable error into a page reload.
+  // Everything past the constructor can throw and context is never returned on a throw
+  // so no caller can close it
   try {
     let blobUrl: string | null = null;
     const url = workletUrlOverride ?? (() => {
