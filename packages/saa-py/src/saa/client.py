@@ -95,7 +95,11 @@ class AttentionClient:
         self.video_config = video or CameraConfig()
         self.audio_config = audio or MicConfig()
         self.enable_audio = enable_audio
+        # enable_video is mutable: a camera-side failure at start() falls the
+        # session back to audio-only. _enable_video_wish keeps the caller's
+        # original request so a later start() (camera back) retries video.
         self.enable_video = enable_video
+        self._enable_video_wish = enable_video
         self.server_profile = server_profile
         self.auto_reconnect = auto_reconnect
         self.threshold = _clamp01(initial_threshold)
@@ -178,14 +182,44 @@ class AttentionClient:
         self._stopping = False
         self._reconnecting = False
         self._reconnect_stop.clear()
+        # Restore the caller's original video wish: an audio-only fallback in a
+        # prior session must not silently pin this one audio-only if a camera
+        # is back.
+        self.enable_video = self._enable_video_wish
         try:
+            # Probe the camera BEFORE opening the WS. cv2.VideoCapture never
+            # raises on a missing/busy device — isOpened() is the only signal —
+            # so without this check the reader thread spins forever on a dead
+            # device: no frames, no error, and start() returns "successfully".
+            # Probing first also lets an audio-only fallback bind the correct
+            # server profile at connect time, since _resolve_ws_url reads
+            # self.enable_video. The camera senders gate on ws liveness, so
+            # starting capture before the socket is up simply drops the first
+            # few frames (same as a reconnect gap).
+            if self.enable_video:
+                self._cam = CameraCapture(self.video_config, on_jpeg=self._on_cam_jpeg)
+                self._cam.start()
+                if not self._cam.is_open():
+                    self._cam.stop()
+                    self._cam = None
+                    if self.enable_audio:
+                        logger.warning(
+                            "[saa] camera device %s unavailable (missing or held"
+                            " by another app) — continuing audio-only",
+                            self.video_config.device_index,
+                        )
+                        self.enable_video = False
+                    else:
+                        raise RuntimeError(
+                            f"camera device {self.video_config.device_index} could"
+                            " not be opened (missing or held by another app) and"
+                            " enable_audio is False — no media source available"
+                        )
+
             self._open_ws_blocking()
             if self.enable_audio:
                 self._mic = MicCapture(self.audio_config, on_pcm16=self._on_mic_pcm16)
                 self._mic.start()
-            if self.enable_video:
-                self._cam = CameraCapture(self.video_config, on_jpeg=self._on_cam_jpeg)
-                self._cam.start()
             self._stats_stop.clear()
             self._stats_thread = threading.Thread(
                 target=self._heartbeat_loop, daemon=True, name="saa-heartbeat",

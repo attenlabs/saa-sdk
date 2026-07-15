@@ -153,6 +153,12 @@ class CameraCapture:
         self._reader_thread.start()
         self._sender_thread.start()
 
+    def is_open(self) -> bool:
+        """True when the underlying device actually opened. cv2.VideoCapture
+        never raises on a missing/busy device, so isOpened() is the only signal
+        that the camera is live and will hand back frames."""
+        return self._cap is not None and self._cap.isOpened()
+
     def _reader(self) -> None:
         while not self._stop.is_set():
             if self._cap is None or not self._cap.isOpened():
