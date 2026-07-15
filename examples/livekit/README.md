@@ -16,9 +16,12 @@ The whole client ([`packages/saa-livekit-client`](../../packages/saa-livekit-cli
 | Sample | Stack | Run |
 |---|---|---|
 | [`voice_agent_realtime/`](./voice_agent_realtime) | OpenAI Realtime (speech-to-speech), + SAA | `python agent.py dev` |
+| [`voice_agent_factory/`](./voice_agent_factory) | Greenfield `build_attention_entrypoint` — factory wires token + session + engine; log-only handler (bring your own STT/LLM/TTS) | `python agent.py dev` |
 | [`web/`](./web) | Vanilla HTML + `livekit-client` browser client rendering the prediction overlay | `python -m uvicorn token_server:app` |
 
 All need `livekit-agents>=1.0`, verified on the current 1.5.x/1.6.x line, using the `AgentServer` + `@server.rtc_session()` shape. (`WorkerOptions(entrypoint_fnc=...)` also works and is the older idiom.)
+
+`voice_agent_factory` is the minimal greenfield path; `voice_agent_realtime` is the full speech-to-speech showcase.
 
 ## Quick start: realtime agent + web client
 
