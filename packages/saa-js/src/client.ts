@@ -587,6 +587,8 @@ export class AttentionClient {
       let settled = false;
 
       ws.onopen = () => {
+        // A socket that is no longer this client's current socket should not be used
+        if (this.ws !== ws) return;
         this.wsOpenedAt = performance.now();
         this.sentAudio = 0;
         this.sentVideo = 0;
@@ -602,6 +604,9 @@ export class AttentionClient {
       };
 
       ws.onmessage = (e) => {
+        // Ignore frames from a superseded/closed socket — only the current
+        // socket's messages drive session state.
+        if (this.ws !== ws) return;
         if (typeof e.data !== "string") return;
         let msg: ServerMessage;
         try {
@@ -625,6 +630,18 @@ export class AttentionClient {
       };
 
       ws.onclose = (e) => {
+        // stop() fire-and-forgets ws.close() and a later start() assigns a new
+        // socket; this old socket's onclose still fires asynchronously. 
+        // when this.ws === ws (normal close) or this.ws === null (close arriving
+        // after stop() already nulled it), run the body as before.
+        if (this.ws !== ws && this.ws !== null) {
+          if (!settled) {
+            settled = true;
+            reject(buildCloseError(e.code, e.reason, e.wasClean));
+          }
+          return;
+        }
+
         this.stopHeartbeat();
         this.ws = null;
 

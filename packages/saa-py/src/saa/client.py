@@ -556,6 +556,9 @@ class AttentionClient:
             )
 
     def _on_ws_open(self, ws) -> None:
+        # Ignore a stale socket
+        if self._ws is not None and ws is not self._ws:
+            return
         self._ws_opened_at = time.monotonic()
         self._last_pong_at = self._ws_opened_at
         self._stall_emitted = False
@@ -564,6 +567,9 @@ class AttentionClient:
         self._emit("connected")
 
     def _on_ws_message(self, ws, message) -> None:
+        # Drop frames from a superseded socket (see _on_ws_open).
+        if self._ws is not None and ws is not self._ws:
+            return
         if not isinstance(message, str):
             return
         try:
@@ -573,6 +579,10 @@ class AttentionClient:
         self._handle_msg(msg)
 
     def _on_ws_close(self, ws, code, reason) -> None:
+        # A superseded socket's close must not tear down the current session's
+        # events/reconnect (see _on_ws_open). self._ws is None only after stop() nulled it
+        if self._ws is not None and ws is not self._ws:
+            return
         code = code or 0
         reason = reason or ""
         was_clean = code == 1000
