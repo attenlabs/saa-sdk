@@ -64,6 +64,10 @@ export class AttentionClient {
   private warmedUp = false;
   private threshold: number;
   private started = false;
+  // Bumped on every start() entry and every stop() entry, mismatch means a
+  // stop() (or newer start()) landed mid-startup, so this call must abort and
+  // release
+  private lifecycleEpoch = 0;
 
   // emit "Connection Stalled" at most once per stall episode; reset on pong
   private stallEmitted = false;
@@ -144,6 +148,8 @@ export class AttentionClient {
   async start(options: StartOptions = {}): Promise<void> {
     if (this.started) throw new Error("AttentionClient already started");
     this.started = true;
+
+    const epoch = ++this.lifecycleEpoch;
     // reset reconnect state here (not in stop()) so a late reconnect callback
     // after stop() still sees stopping=true and bails
     this.stopping = false;
@@ -220,6 +226,7 @@ export class AttentionClient {
         throw err;
       }
     }
+    if (this.lifecycleEpoch !== epoch) return this.abortStart();
 
     if (this.enableVideo && videoEl && this.mediaStream) {
       videoEl.srcObject = this.mediaStream;
@@ -231,14 +238,17 @@ export class AttentionClient {
         );
       }
     }
+    if (this.lifecycleEpoch !== epoch) return this.abortStart();
 
     try {
       await this.connectWS();
     } catch (err) {
       this.teardownMedia();
       this.started = false;
-      throw err;
+      // normalize so start() always rejects with an Error
+      throw err ?? new Error("start() aborted: connection closed during handshake");
     }
+    if (this.lifecycleEpoch !== epoch) return this.abortStart();
 
     if (this.enableAudio && this.mediaStream) {
       try {
@@ -284,6 +294,7 @@ export class AttentionClient {
         await this.stop();
         throw err;
       }
+      if (this.lifecycleEpoch !== epoch) return this.abortStart();
     }
 
     if (this.enableVideo && videoEl) {
@@ -323,6 +334,10 @@ export class AttentionClient {
   }
 
   async stop(): Promise<void> {
+    // Advance the generation FIRST so a start() awaiting mid-startup sees the
+    // change at its next checkpoint and aborts instead of resuming into a live
+    // session on a client the caller believes is stopped
+    this.lifecycleEpoch++;
     // set stopping FIRST so an in-flight onclose/backoff bails out of reconnect
     this.stopping = true;
     if (this.reconnectTimer) {
@@ -360,6 +375,27 @@ export class AttentionClient {
     this.feedBuffer = new Float32Array(0);
     // leave stopping=true; start() resets it. A reconnect in-flight during
     // stop() must keep seeing stopping=true until a fresh start().
+  }
+
+  /**
+   * Release whatever the aborted start() acquired up to its current checkpoint
+   * and reject. 
+   */
+  private async abortStart(): Promise<never> {
+    if (this.audioPipeline) {
+      await this.audioPipeline.close();
+      this.audioPipeline = null;
+    }
+    this.stopHeartbeat();
+    if (this.ws) {
+      try {
+        this.ws.close(1000, "client stop");
+      } catch {}
+      this.ws = null;
+    }
+    this.teardownMedia();
+    this.started = false;
+    throw new Error("start() aborted: stop() was called while starting");
   }
 
   mute(): void {
