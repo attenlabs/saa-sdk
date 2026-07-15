@@ -1,0 +1,22 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /packages/saa-js
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /packages/saa-py
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /packages/saa-livekit-client
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /packages/saa-pipecat-client
+    schedule:
+      interval: weekly
