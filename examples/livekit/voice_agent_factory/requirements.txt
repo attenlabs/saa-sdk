@@ -1,0 +1,4 @@
+# tested against livekit-agents 1.5.12
+livekit-agents>=1.5
+python-dotenv>=1.0
+# saa-livekit-client>=0.1.0   # commented until published
