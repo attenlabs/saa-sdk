@@ -20,7 +20,13 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 from typing import Optional
+
+from dotenv import load_dotenv
+
+# auto-load examples/twilio/.env so `cp .env.example .env` + fill keys just works
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 
 def _require_env(name: str) -> str:

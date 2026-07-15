@@ -96,6 +96,8 @@ class AttentionClient:
         self.audio_config = audio or MicConfig()
         self.enable_audio = enable_audio
         self.enable_video = enable_video
+        # _enable_video_wish keeps original request so a later start() (camera back) retries video
+        self._enable_video_wish = enable_video
         self.server_profile = server_profile
         self.auto_reconnect = auto_reconnect
         self.threshold = _clamp01(initial_threshold)
@@ -178,14 +180,37 @@ class AttentionClient:
         self._stopping = False
         self._reconnecting = False
         self._reconnect_stop.clear()
+        # Restore the caller's original video wish: an audio-only fallback in a
+        # prior session must not silently pin this one audio-only if a camera
+        # is back.
+        self.enable_video = self._enable_video_wish
         try:
+            # Probe the camera BEFORE opening the WS. also lets an audio-only fallback bind the correct
+            # server profile at connect time, since _resolve_ws_url reads self.enable_video.
+            if self.enable_video:
+                self._cam = CameraCapture(self.video_config, on_jpeg=self._on_cam_jpeg)
+                self._cam.start()
+                if not self._cam.is_open():
+                    self._cam.stop()
+                    self._cam = None
+                    if self.enable_audio:
+                        logger.warning(
+                            "[saa] camera device %s unavailable (missing or held"
+                            " by another app) — continuing audio-only",
+                            self.video_config.device_index,
+                        )
+                        self.enable_video = False
+                    else:
+                        raise RuntimeError(
+                            f"camera device {self.video_config.device_index} could"
+                            " not be opened (missing or held by another app) and"
+                            " enable_audio is False — no media source available"
+                        )
+
             self._open_ws_blocking()
             if self.enable_audio:
                 self._mic = MicCapture(self.audio_config, on_pcm16=self._on_mic_pcm16)
                 self._mic.start()
-            if self.enable_video:
-                self._cam = CameraCapture(self.video_config, on_jpeg=self._on_cam_jpeg)
-                self._cam.start()
             self._stats_stop.clear()
             self._stats_thread = threading.Thread(
                 target=self._heartbeat_loop, daemon=True, name="saa-heartbeat",
@@ -531,6 +556,9 @@ class AttentionClient:
             )
 
     def _on_ws_open(self, ws) -> None:
+        # Ignore a stale socket
+        if self._ws is not None and ws is not self._ws:
+            return
         self._ws_opened_at = time.monotonic()
         self._last_pong_at = self._ws_opened_at
         self._stall_emitted = False
@@ -539,6 +567,9 @@ class AttentionClient:
         self._emit("connected")
 
     def _on_ws_message(self, ws, message) -> None:
+        # Drop frames from a superseded socket (see _on_ws_open).
+        if self._ws is not None and ws is not self._ws:
+            return
         if not isinstance(message, str):
             return
         try:
@@ -548,6 +579,10 @@ class AttentionClient:
         self._handle_msg(msg)
 
     def _on_ws_close(self, ws, code, reason) -> None:
+        # A superseded socket's close must not tear down the current session's
+        # events/reconnect (see _on_ws_open). self._ws is None only after stop() nulled it
+        if self._ws is not None and ws is not self._ws:
+            return
         code = code or 0
         reason = reason or ""
         was_clean = code == 1000

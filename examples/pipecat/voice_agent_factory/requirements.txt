@@ -1,0 +1,4 @@
+httpx>=0.25
+python-dotenv>=1.0
+# saa-pipecat-client>=0.1.0 - uncomment till publish
+pipecat-ai[daily]>=1.0.0,<2

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "attenlabs-saa"
-version = "0.7.1"
+version = "0.7.2"
 description = "Python SDK for SAA, the addressee layer for voice agents — device-directed speech detection that emits a turn_ready event per addressed utterance, so only speech meant for your agent reaches your STT, LLM, or TTS."
 readme = "README.md"
 license = { text = "Apache-2.0" }

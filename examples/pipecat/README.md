@@ -1,10 +1,19 @@
 # SAA + Pipecat (on Daily)
 
-A sample that adds **attention labs SAA** device-directed gating to a [Pipecat](https://github.com/pipecat-ai/pipecat) voice agent running on Daily. SAA decides, per utterance, whether speech in the room was meant for the agent or not.
+Samples that add **attention labs SAA** device-directed gating to a [Pipecat](https://github.com/pipecat-ai/pipecat) voice agent running on Daily. SAA decides, per utterance, whether speech in the room was meant for the agent or not.
 
 The [`web/`](./web) demo is a single `uvicorn` process that creates an ephemeral Daily room, summons the SAA agent, spawns an OpenAI Realtime voice agent into the same room (when `OPENAI_API_KEY` is set), and serves a vanilla HTML/JS frontend that renders SAA's prediction stream as a live overlay.
 
 When the layout turns green, that means after the user's utterance the voice agent will respond.
+
+## Samples
+
+| Sample | What it is | Run |
+|---|---|---|
+| [`web/`](./web) | Turnkey demo: ephemeral Daily room, OpenAI Realtime talkback, live browser overlay | `python -m uvicorn token_server:app` |
+| [`voice_agent_factory/`](./voice_agent_factory) | Minimal greenfield bot: `build_attention_runner` wires token + session + engine; log-only handler | `python bot.py` |
+
+The walkthrough below covers the **`web/`** demo; `voice_agent_factory/` has its own short README.
 
 ## How SAA integrates
 

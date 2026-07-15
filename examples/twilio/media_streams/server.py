@@ -71,6 +71,7 @@ import time
 import uuid
 from contextlib import suppress
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional, Union
 
 try:
@@ -82,6 +83,7 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 import numpy as np
+from dotenv import load_dotenv
 
 from saa import AttentionClient
 
@@ -95,6 +97,8 @@ from audio import (
 from bridge import Bridge, CallContext, CallSession, LoggingBridge
 from twiml import twiml_for_stream
 
+# auto-load examples/twilio/.env so `cp .env.example .env` + fill keys just works
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 log = logging.getLogger("saa.twilio")
 logging.basicConfig(

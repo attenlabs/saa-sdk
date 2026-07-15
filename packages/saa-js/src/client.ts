@@ -83,7 +83,9 @@ export class AttentionClient {
   private httpOrigin: string | null = null;
 
   private readonly enableAudio: boolean;
-  private readonly enableVideo: boolean;
+  private enableVideo: boolean;
+  // preserves the caller's original request so a later start() retries video if failed
+  private readonly enableVideoWish: boolean;
   // false for a caller-supplied stream — stop() won't stop its tracks
   private ownsStream = true;
   private feedBuffer = new Float32Array(0); // feedAudio() carry-over
@@ -95,7 +97,8 @@ export class AttentionClient {
     this.opts = opts;
     this.threshold = clamp01(opts.initialThreshold ?? DEFAULT_THRESHOLD);
     this.enableAudio = opts.enableAudio !== false;
-    this.enableVideo = opts.enableVideo !== false;
+    this.enableVideoWish = opts.enableVideo !== false;
+    this.enableVideo = this.enableVideoWish;
     this.autoReconnect = opts.autoReconnect !== false;
   }
 
@@ -152,6 +155,9 @@ export class AttentionClient {
     this.stopping = false;
     this.reconnecting = false;
     this.reconnectAttempt = 0;
+    // restore the caller's original video wish: an audio-only fallback in a
+    // prior session must not silently pin this one audio-only if a camera is back
+    this.enableVideo = this.enableVideoWish;
 
     const videoEl = options.videoElement ?? null;
     const videoOpts = this.opts.video ?? {};
@@ -165,6 +171,10 @@ export class AttentionClient {
       );
     }
 
+    const audioConstraints = this.enableAudio
+      ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      : false;
+
     // caller-supplied stream skips getUserMedia; both disabled = no capture
     try {
       if (options.mediaStream) {
@@ -172,9 +182,7 @@ export class AttentionClient {
         this.ownsStream = false;
       } else if (this.enableAudio || this.enableVideo) {
         this.mediaStream = await navigator.mediaDevices.getUserMedia({
-          audio: this.enableAudio
-            ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-            : false,
+          audio: audioConstraints,
           video: this.enableVideo
             ? {
                 width: { ideal: videoOpts.width ?? 1920, max: videoOpts.width ?? 1920 },
@@ -185,8 +193,38 @@ export class AttentionClient {
         this.ownsStream = true;
       }
     } catch (err) {
-      this.started = false;
-      throw err;
+      // camera errors: permission denied, device held by another app shouldn't kill a session
+      // Retry with the same audio constraints and no video (audio-only server profile)
+      if (
+        this.enableVideo &&
+        this.enableAudio &&
+        !options.mediaStream &&
+        isRecoverableCameraError(err)
+      ) {
+        try {
+          this.mediaStream = await navigator.mediaDevices.getUserMedia({
+            audio: audioConstraints,
+            video: false,
+          });
+          this.ownsStream = true;
+          this.enableVideo = false;
+          this.emit("error", {
+            title: "Camera unavailable",
+            message:
+              "Could not access the camera — continuing with an audio-only session.",
+            detail: describeCameraError(err),
+            kind: "environment",
+            retriable: false,
+          });
+        } catch (audioErr) {
+          // audio-only also failed — genuinely fatal
+          this.started = false;
+          throw audioErr;
+        }
+      } else {
+        this.started = false;
+        throw err;
+      }
     }
     if (this.lifecycleEpoch !== epoch) return this.abortStart();
 
@@ -549,6 +587,8 @@ export class AttentionClient {
       let settled = false;
 
       ws.onopen = () => {
+        // A socket that is no longer this client's current socket should not be used
+        if (this.ws !== ws) return;
         this.wsOpenedAt = performance.now();
         this.sentAudio = 0;
         this.sentVideo = 0;
@@ -564,6 +604,9 @@ export class AttentionClient {
       };
 
       ws.onmessage = (e) => {
+        // Ignore frames from a superseded/closed socket — only the current
+        // socket's messages drive session state.
+        if (this.ws !== ws) return;
         if (typeof e.data !== "string") return;
         let msg: ServerMessage;
         try {
@@ -587,6 +630,18 @@ export class AttentionClient {
       };
 
       ws.onclose = (e) => {
+        // stop() fire-and-forgets ws.close() and a later start() assigns a new
+        // socket; this old socket's onclose still fires asynchronously. 
+        // when this.ws === ws (normal close) or this.ws === null (close arriving
+        // after stop() already nulled it), run the body as before.
+        if (this.ws !== ws && this.ws !== null) {
+          if (!settled) {
+            settled = true;
+            reject(buildCloseError(e.code, e.reason, e.wasClean));
+          }
+          return;
+        }
+
         this.stopHeartbeat();
         this.ws = null;
 
@@ -879,6 +934,37 @@ function describeError(err: unknown): string {
   } catch {
     return String(err);
   }
+}
+
+// getUserMedia rejections where recovery is possible by dropping to an audio-only session
+const RECOVERABLE_CAMERA_ERROR_NAMES = new Set([
+  "NotFoundError",
+  "NotAllowedError",
+  "NotReadableError",
+  "OverconstrainedError",
+  "AbortError",
+  "SecurityError",
+]);
+
+function isRecoverableCameraError(err: unknown): boolean {
+  if (err && typeof err === "object" && "name" in err) {
+    return RECOVERABLE_CAMERA_ERROR_NAMES.has(
+      String((err as { name: unknown }).name),
+    );
+  }
+  return false;
+}
+
+function describeCameraError(err: unknown): string {
+  if (err && typeof err === "object") {
+    const o = err as { name?: unknown; message?: unknown };
+    const name = typeof o.name === "string" ? o.name : "";
+    const message = typeof o.message === "string" ? o.message : "";
+    if (name && message) return `${name}: ${message}`;
+    if (name) return name;
+    if (message) return message;
+  }
+  return describeError(err);
 }
 
 function buildCloseError(
