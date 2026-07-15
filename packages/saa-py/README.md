@@ -106,7 +106,7 @@ client = AttentionClient(
 | `feed_audio(audio, *, sample_rate=16000)` | Stream audio captured by another stack instead of the SDK's own mic. Requires `enable_audio=False`. See [Feeding external audio and video](#feeding-external-audio-and-video). |
 | `feed_video(frame)` | Push an externally-captured frame instead of the SDK's own camera. Requires `enable_video=False`. Accepts pre-encoded JPEG `bytes` or a raw `np.ndarray` (BGR, JPEG-encoded internally). See [Feeding external audio and video](#feeding-external-audio-and-video). |
 
-When `enable_video=True` but the camera can't be opened (missing device, or one held by another app), `start()` continues audio-only — binding the `audio_only` server profile and logging a warning — as long as `enable_audio=True`. With `enable_audio=False` there is nothing to fall back to, so `start()` raises. The original `enable_video` request is restored on the next `start()`, so a later session retries video.
+When `enable_video=True` but the camera can't be opened (missing device, or one held by another app), `start()` continues audio-only if `enable_audio=True`.  The original `enable_video` request is restored on the next `start()`, so a later session retries video.
 
 ### Feeding external audio and video
 

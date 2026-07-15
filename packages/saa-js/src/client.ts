@@ -79,10 +79,8 @@ export class AttentionClient {
   private httpOrigin: string | null = null;
 
   private readonly enableAudio: boolean;
-  // mutable: a recoverable camera-side failure at start() falls the session
-  // back to audio-only. enableVideoWish preserves the caller's original request
-  // so a later start() (camera back) retries video.
   private enableVideo: boolean;
+  // preserves the caller's original request so a later start() retries video if failed
   private readonly enableVideoWish: boolean;
   // false for a caller-supplied stream — stop() won't stop its tracks
   private ownsStream = true;
@@ -189,11 +187,8 @@ export class AttentionClient {
         this.ownsStream = true;
       }
     } catch (err) {
-      // A recoverable camera-side failure (no camera, permission denied, device
-      // held by another app, unsatisfiable constraints) shouldn't kill a session
-      // that can run audio-only. Retry with the same audio constraints and no
-      // video; enableVideo=false then binds the audio_only profile at URL
-      // resolution below and skips all frame capture.
+      // camera errors: permission denied, device held by another app shouldn't kill a session
+      // Retry with the same audio constraints and no video (audio-only server profile)
       if (
         this.enableVideo &&
         this.enableAudio &&
@@ -888,10 +883,7 @@ function describeError(err: unknown): string {
   }
 }
 
-// getUserMedia rejection names we can recover from by dropping to an audio-only
-// session, as opposed to an audio-device failure (fatal — nothing to fall back
-// to). These cover no camera, denied permission, a device held by another app,
-// unsatisfiable constraints, an aborted capture, and platform blocks.
+// getUserMedia rejections where recovery is possible by dropping to an audio-only session
 const RECOVERABLE_CAMERA_ERROR_NAMES = new Set([
   "NotFoundError",
   "NotAllowedError",
