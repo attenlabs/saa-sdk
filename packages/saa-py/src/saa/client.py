@@ -556,10 +556,7 @@ class AttentionClient:
             )
 
     def _on_ws_open(self, ws) -> None:
-        # Ignore a stale socket: stop() joins the ws thread with a timeout, so a
-        # slow (>2s) close handshake can let a superseded socket's callback fire
-        # after a fresh start() replaced self._ws. websocket-client passes the
-        # WebSocketApp as the first arg, so identity-check it against the current.
+        # Ignore a stale socket
         if self._ws is not None and ws is not self._ws:
             return
         self._ws_opened_at = time.monotonic()
@@ -583,8 +580,7 @@ class AttentionClient:
 
     def _on_ws_close(self, ws, code, reason) -> None:
         # A superseded socket's close must not tear down the current session's
-        # events/reconnect (see _on_ws_open). self._ws is None only after stop()
-        # nulled it, where the _stopping early-return below still applies.
+        # events/reconnect (see _on_ws_open). self._ws is None only after stop() nulled it
         if self._ws is not None and ws is not self._ws:
             return
         code = code or 0
