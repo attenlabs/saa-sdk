@@ -587,9 +587,7 @@ export class AttentionClient {
       let settled = false;
 
       ws.onopen = () => {
-        // A socket that is no longer this client's current socket (stop() nulled
-        // it, or a newer start() replaced it) must not start heartbeats or claim
-        // the "connected" lifecycle — that belongs to the live socket.
+        // A socket that is no longer this client's current socket should not be used
         if (this.ws !== ws) return;
         this.wsOpenedAt = performance.now();
         this.sentAudio = 0;
@@ -633,13 +631,8 @@ export class AttentionClient {
 
       ws.onclose = (e) => {
         // stop() fire-and-forgets ws.close() and a later start() assigns a new
-        // socket; this old socket's onclose still fires asynchronously. If we
-        // ran the teardown body then, we'd stopHeartbeat(), null this.ws, and
-        // emit "disconnected" against the *new* live session — silently killing
-        // it. So when this.ws is a DIFFERENT live socket, treat the close as a
-        // superseded session: honor a pending initial-handshake rejection, but
-        // leave the live socket's heartbeat/events/reconnect untouched. When
-        // this.ws === ws (normal close) or this.ws === null (close arriving
+        // socket; this old socket's onclose still fires asynchronously. 
+        // when this.ws === ws (normal close) or this.ws === null (close arriving
         // after stop() already nulled it), run the body as before.
         if (this.ws !== ws && this.ws !== null) {
           if (!settled) {
