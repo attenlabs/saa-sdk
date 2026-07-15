@@ -92,6 +92,8 @@ await client.start({ videoElement: videoEl });
 
 `warmupComplete` fires once the server model has warmed up and is producing real predictions; use it to drop any loading UI. `prediction.responding` is `true` while your app is mid-response (see `markResponding`), and `interjection` fires when the agent should volunteer after humans go quiet.
 
+If the camera is unavailable when video capture is enabled and audio is enabled, `start()` continues with an audio-only session (`audio_only` server profile), emits an `error` with `kind: "environment"` and `title: "Camera unavailable"`. The original `enableVideo` request is restored on the next `start()`, so a later session retries video.
+
 ## LLM integration
 
 The SDK captures speech but does **not** route it to an LLM. SAA is model-agnostic and drop-in: use the `turnReady` event to forward only device-directed audio to any model, ASR, or voice stack you like.
