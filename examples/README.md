@@ -51,6 +51,16 @@ The Pipecat sibling. SAA joins your Daily room and publishes events on Daily's a
 
 Targets **pipecat-ai >= 1.0.0** (the `pipecat.transports.daily.transport` canonical import path) and **daily-python >= 0.19.0**. See [`pipecat/README.md`](./pipecat/README.md) for the shared environment.
 
+## Stream (getstream.io)
+
+SAA runs browser-side (no Python media-participant SDK exists for Stream). The `@attenlabs/saa-js` client captures mic and camera, classifies each frame, and the optional OpenAI Realtime bridge responds to device-directed turns.
+
+| Sample | What it shows | Run |
+|---|---|---|
+| [`stream/web/`](./stream/web) | SAA + Stream Video (`default` call type): multimodal prediction overlay with local camera preview, voice AI optional. | `uvicorn token_server:app --port 8000` |
+
+Needs `STREAM_API_KEY`, `STREAM_API_SECRET`, and `SAA_API_KEY`. `OPENAI_API_KEY` is optional (enables voice AI). The FastAPI token server uses the `getstream` Python SDK to mint correctly-formatted JWTs and create calls server-side. See [`stream/README.md`](./stream/README.md).
+
 ## ElevenLabs Conversational AI
 
 ElevenLabs runs its agent inside its own sealed WebRTC room, so this sample uses the **streaming SDK's `feed_audio` ingestion**: it taps ElevenLabs' Python `AudioInterface` (the clean PCM seam), feeds the user mic to SAA, and gates the agent on the events that come back.
@@ -93,6 +103,7 @@ The send threshold is the confidence required to treat speech as device-directed
 - `SAA_API_KEY` is your attention labs API key, the same credential for the streaming SDK and the LiveKit and Pipecat samples. Get one at [attentionlabs.ai](https://attentionlabs.ai).
 - LiveKit samples additionally need `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, plus per-sample provider keys. See each sample's `.env.example`.
 - Pipecat samples need `DAILY_API_KEY` (Daily REST key; mints the bot meeting token locally), plus per-sample provider keys.
+- Stream samples need `STREAM_API_KEY` and `STREAM_API_SECRET` from [dashboard.getstream.io](https://dashboard.getstream.io/).
 
 ## See also
 
