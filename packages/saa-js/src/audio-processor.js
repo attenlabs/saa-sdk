@@ -47,7 +47,8 @@ class PCMCaptureProcessor extends AudioWorkletProcessor {
     return out;
   }
 
-  _accumulate(samples) {
+  // _accumulate(samples) {
+  ring buffer {
     const combined = new Float32Array(this._buffer.length + samples.length);
     combined.set(this._buffer);
     combined.set(samples, this._buffer.length);
