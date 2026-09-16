@@ -2,6 +2,7 @@
 // connects to a room, publishes cam+mic, plays the agent's audio, and renders
 // SAA's prediction stream as an overlay
 import { parseTurnPayload } from "./turn-parser.js";
+import { createWarmupTracker } from "./warmup.js";
 
 const { Room, RoomEvent, Track, createLocalTracks } = LivekitClient;
 
@@ -10,6 +11,7 @@ const SAA_TOPIC = "saa";
 const MAX_TURN_BYTES = 16 * 1024 * 1024; // sanity cap on a single turn payload
 
 let room = null;
+const warmup = createWarmupTracker();
 
 document.getElementById("btn-start").onclick = start;
 document.getElementById("btn-stop").onclick = stop;
@@ -43,9 +45,8 @@ async function start() {
 
     await room.connect(url, token);
     setStatus("waiting for agent…");
-    // SAA warms its model server-side once summoned; show that on the card
-    // until the native `started` pivot lands.
-    setWarming(true);
+    warmup.connect();
+    setWarmup("loading");
 
     // publish cam + mic (SAA is multimodal — it wants both)
     let tracks;
@@ -68,7 +69,8 @@ async function start() {
   } catch (e) {
     console.error("[saa] start failed:", e);
     setStatus(`error: ${e.message || e}`, true);
-    setWarming(false);
+    warmup.reset();
+    setWarmup("done");
     if (room) {
       try { await room.disconnect(); } catch (_) {}
       room = null;
@@ -109,11 +111,12 @@ function onData(payload, _participant, _kind, topic) {
     return;
   }
   switch (msg.type) {
-    // `started` = model loaded, keep "warming up"
-    // until warmup_complete
-    case "started": setStatus("warming up…"); break;
-    // native pivot: server signals warmup is complete
-    case "warmup_complete": setWarming(false); setStatus("live"); break;
+    // model loaded; predictions now fill its sequence buffer until warmup_complete
+    case "started": warmup.started(); setWarmup("filling"); setStatus("SAA connected"); break;
+    case "warmup_complete":
+      if (warmup.phase !== "done") { warmup.complete(); setWarmup("done"); }
+      setStatus("live");
+      break;
     case "prediction": renderPrediction(msg); break;
     case "vad": renderVAD(msg); break;
     case "state": setStatus(msg.state); break;
@@ -157,32 +160,46 @@ const LABELS = { 0: "silent", 1: "human ↔ human", 2: "talking to me" };
 const predBuffer = [];
 const PRED_BUFFER_MAX = 12;
 
-// Show a "warming up" state on the prediction card until the server's native
-// `started` pivot — otherwise the card sits at "silent" through the
-// multi-second model warmup.
-function setWarming(on) {
+// card phases: "loading" (sweep until `started`), "filling" (bar tracks the
+// sequence buffer), "done" (live predictions)
+function setWarmup(phase) {
   const el = document.getElementById("prediction");
-  el.dataset.warming = String(on);
-  if (on) {
-    el.dataset.class = "0";
-    el.dataset.responding = "false";
-    document.getElementById("class-label").textContent = "warming up";
-    document.getElementById("conf-fill").style.width = ""; // let the CSS sweep show
-    document.getElementById("conf-num").textContent = "—";
-  } else {
+  el.dataset.warming = phase;
+  if (phase === "done") {
     document.getElementById("class-label").textContent = "—";
     document.getElementById("conf-fill").style.width = "0%";
     document.getElementById("conf-num").textContent = "0%";
+    return;
   }
+  el.dataset.class = "0";
+  el.dataset.responding = "false";
+  document.getElementById("class-label").textContent =
+    phase === "loading" ? "loading model…" : "building context…";
+  document.getElementById("conf-fill").style.width = phase === "loading" ? "" : "0%";
+  document.getElementById("conf-num").textContent = phase === "loading" ? "—" : "0%";
+}
+
+function renderWarmupFill(fill) {
+  const pct = Math.round(fill * 100);
+  document.getElementById("conf-fill").style.width = `${pct}%`;
+  document.getElementById("conf-num").textContent = `${pct}%`;
 }
 
 function renderPrediction(p) {
   const el = document.getElementById("prediction");
-  // warming is cleared only by the warmup_complete message, not here
-  const warming = el.dataset.warming === "true";
-  // While warming, keep the "warming up" card and ignore the conf-0
-  // buffer-fill predictions until warmup_complete fires.
-  if (warming) return;
+  if (warmup.phase !== "done") {
+    const { fill, done } = warmup.prediction(p);
+    document.getElementById("faces").textContent = `faces: ${p.num_faces}`;
+    if (!done) {
+      if (el.dataset.warming !== "filling") setWarmup("filling");
+      renderWarmupFill(fill);
+      return;
+    }
+    // confident prediction with no warmup_complete: treat as warm
+    console.log("[saa] warmup inferred from first confident prediction");
+    setWarmup("done");
+    setStatus("live");
+  }
   // prefer the canonical polished display_class; fall back to class
   const cls = p.display_class ?? p.class;
   // native AI-responding flag; older servers signal it via source instead
@@ -250,9 +267,10 @@ async function stop() {
   }
   room = null;
   setStatus("disconnected");
+  warmup.reset();
   // reset the prediction card to its idle look
   const pred = document.getElementById("prediction");
-  pred.dataset.warming = "false";
+  pred.dataset.warming = "done";
   pred.dataset.responding = "false";
   pred.dataset.class = "0";
   document.getElementById("class-label").textContent = "--";
