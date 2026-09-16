@@ -35,13 +35,21 @@ for _name in ("voice-agent-realtime", "livekit", "saa_livekit_client"):
     _lg.setLevel(logging.DEBUG)
     _lg.addHandler(_fh)
 
+# hard cutoff on a single reply (audio + transcript tokens); the prompt is the primary length control
+MAX_RESPONSE_TOKENS = 300
+
 INTERJECTION_INSTRUCTIONS = "The user went quiet. Briefly check in or offer help based on what they were just discussing."
 FOLLOWUP_INSTRUCTIONS = "Respond to the user's reply. If they dismissed you, acknowledge briefly and stop."
 
 
 class Assistant(Agent):
     def __init__(self) -> None:
-        super().__init__(instructions="You are a helpful voice assistant. Be brief")
+        super().__init__(
+            instructions=(
+                "You are a helpful voice assistant. Answer in one or two short sentences. "
+                "Do not ask follow-up questions unless the user asks for help with a task."
+            )
+        )
 
 
 def _prewarm(proc) -> None:
@@ -71,8 +79,11 @@ async def entrypoint(ctx: JobContext) -> None:
     ctx.add_shutdown_callback(saa.stop)
 
     # speech-to-speech -> SAA is the turn-taker: server VAD off
+    llm = openai.realtime.RealtimeModel(voice="alloy", turn_detection=None)
+    # not a constructor kwarg on livekit-plugins-openai 1.5.x; applies to every session the model opens
+    llm.update_options(max_response_output_tokens=MAX_RESPONSE_TOKENS)
     session = AgentSession(
-        llm=openai.realtime.RealtimeModel(voice="alloy", turn_detection=None),
+        llm=llm,
         vad=ctx.proc.userdata["vad"],
         turn_detection="manual",
     )
