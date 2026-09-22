@@ -9,6 +9,13 @@ Published registries:
 - [`saa-livekit-client`](https://pypi.org/project/saa-livekit-client/) on PyPI
 - [`saa-pipecat-client`](https://pypi.org/project/saa-pipecat-client/) on PyPI
 
+## 2026-08-13
+
+### `attenlabs-saa` 0.8.0
+
+- **Breaking (packaging):** `sounddevice` and `opencv-python` are no longer base dependencies. `pip install attenlabs-saa` now installs the wire only (`numpy`, `websocket-client`); the capture stack moves to the `[mic]`, `[camera]` and `[capture]` extras. Consumers that own their own audio (`enable_audio=False` + `feed_audio()`) install two wheels instead of four and no longer need libGL on headless Linux. Existing users who rely on the SDK opening their devices should install `attenlabs-saa[capture]`.
+- `capture.py` no longer imports `cv2` at module load, so `import saa` works without OpenCV. Both capture imports now raise an `ImportError` naming the extra to install rather than a bare "No module named".
+
 ## 2026-07-15
 
 ### `attenlabs-saa` 0.7.2 · `@attenlabs/saa-js` 0.7.2
