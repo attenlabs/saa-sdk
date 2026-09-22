@@ -21,6 +21,7 @@ from .capture import (
     CameraConfig,
     MicCapture,
     MicConfig,
+    _cv2,
     _linear_downsample,
 )
 from .events import (
@@ -403,7 +404,7 @@ class AttentionClient:
             if not jpeg:
                 return
         else:
-            import cv2
+            cv2 = _cv2()
 
             arr = np.asarray(frame)
             if arr.size == 0:

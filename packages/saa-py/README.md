@@ -15,10 +15,13 @@ Get your API key at [attentionlabs.ai](https://attentionlabs.ai).
 ## Install
 
 ```bash
-pip install attenlabs-saa
+pip install attenlabs-saa            # wire only — numpy + websocket-client
+pip install attenlabs-saa[capture]   # + mic and camera capture
 ```
 
-Requires Python 3.10+. `sounddevice` and `opencv-python` are pulled in automatically for mic and camera access.
+Requires Python 3.10+.
+
+The base install is the WebSocket client and nothing else, so it drops into a headless container without OpenCV or PortAudio. Add the capture stack only if you want the SDK to open your devices for you: `[mic]` pulls `sounddevice`, `[camera]` pulls `opencv-python`, `[capture]` pulls both. If you already own the mic (an existing pipeline, a Twilio stream, a browser socket), stay on the base install and push frames in with [`feed_audio()` / `feed_video()`](#feeding-external-audio-and-video). Both are imported on first use, so a missing one is an error at `start()` naming the extra, never at `import saa`.
 
 ## Quickstart
 

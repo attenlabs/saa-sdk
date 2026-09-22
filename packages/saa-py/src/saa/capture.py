@@ -5,7 +5,6 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional, Union
 
-import cv2
 import numpy as np
 
 TARGET_AUDIO_RATE = 16000
@@ -13,6 +12,30 @@ SEND_INTERVAL_SAMPLES = 1600  # 100 ms @ 16 kHz
 VIDEO_INTERVAL_S = 0.25
 
 MicDevice = Union[int, str, None]
+
+_cv2_mod: Optional[Any] = None
+
+
+def _cv2() -> Any:
+    """OpenCV, imported on first use.
+
+    Lazy for the same reason sounddevice is: `import saa` must work without
+    the capture stack installed. Audio-only consumers (enable_video=False,
+    feed_audio) never reach the camera path, and cv2 is a ~90 MB wheel that
+    pulls libGL on headless Linux.
+    """
+    global _cv2_mod
+    if _cv2_mod is None:
+        try:
+            import cv2
+        except ImportError as exc:
+            raise ImportError(
+                "camera capture needs OpenCV, which is not installed. "
+                "Install it with `pip install attenlabs-saa[camera]`, or pass "
+                "enable_video=False and feed frames in with feed_video()."
+            ) from exc
+        _cv2_mod = cv2
+    return _cv2_mod
 
 
 @dataclass
@@ -45,7 +68,14 @@ class MicCapture:
         # Imported lazily so `import saa` doesn't fail on systems without
         # PortAudio installed — users who only need video capture shouldn't
         # have to install the audio stack.
-        import sounddevice as sd
+        try:
+            import sounddevice as sd
+        except ImportError as exc:
+            raise ImportError(
+                "mic capture needs sounddevice, which is not installed. "
+                "Install it with `pip install attenlabs-saa[mic]`, or pass "
+                "enable_audio=False and feed PCM in with feed_audio()."
+            ) from exc
 
         device_info = sd.query_devices(
             self.config.device if self.config.device is not None else None,
@@ -128,7 +158,7 @@ class CameraCapture:
     def __init__(self, config: CameraConfig, on_jpeg: Callable[[bytes], None]):
         self.config = config
         self.on_jpeg = on_jpeg
-        self._cap: Optional[cv2.VideoCapture] = None
+        self._cap: Optional[Any] = None  # cv2.VideoCapture
         self._reader_thread: Optional[threading.Thread] = None
         self._sender_thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
@@ -136,6 +166,7 @@ class CameraCapture:
         self._frame_lock = threading.Lock()
 
     def start(self) -> None:
+        cv2 = _cv2()
         self._cap = cv2.VideoCapture(self.config.device_index)
         if self._cap.isOpened():
             self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.config.width)
@@ -172,6 +203,7 @@ class CameraCapture:
                 self._latest_frame = frame
 
     def _sender(self) -> None:
+        cv2 = _cv2()
         jpeg_params = [int(cv2.IMWRITE_JPEG_QUALITY), int(self.config.jpeg_quality)]
         next_deadline = time.monotonic()
         while not self._stop.is_set():
