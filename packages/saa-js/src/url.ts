@@ -35,14 +35,29 @@ export function applyServerProfileToWsUrl(
 }
 
 /**
+ * Direct ws(s):// mode for opting into utterance handling
+ */
+export function applyUtteranceHandlingToWsUrl(url: string, enabled: boolean): string {
+  if (!enabled) return url;
+  const u = new URL(url);
+  u.searchParams.set("utterance_handling", "1");
+  return u.toString();
+}
+
+/**
  * Broker mode — the JSON body for POST /allocate
- * 
- * Returns undefined when no profile is selected
+ *
+ * Returns undefined when neither a profile nor utterance handling is selected
+ * (legacy empty body).
  */
 export function allocateBody(
   serverProfile: string | undefined,
   enableVideo: boolean,
+  utteranceHandling = false,
 ): string | undefined {
   const profile = effectiveServerProfile(serverProfile, enableVideo);
-  return profile ? JSON.stringify({ server_profile: profile }) : undefined;
+  const body: Record<string, unknown> = {};
+  if (profile) body.server_profile = profile;
+  if (utteranceHandling) body.utterance_handling = true;
+  return Object.keys(body).length ? JSON.stringify(body) : undefined;
 }

@@ -23,7 +23,7 @@ import {
   type AudioPipeline,
   type VideoPipeline,
 } from "./capture.js";
-import { applyServerProfileToWsUrl, allocateBody } from "./url.js";
+import { applyServerProfileToWsUrl, allocateBody, applyUtteranceHandlingToWsUrl } from "./url.js";
 
 const WS_PING_INTERVAL_MS = 5000;
 const WS_PONG_TIMEOUT_MS = 15000;
@@ -476,6 +476,28 @@ export class AttentionClient {
   }
 
   /**
+   * Utterance handling: feed back what the assistant actually said, as spoken.
+   * This is needed for the classifier, so call this after every assistant response. 
+   * Returns false when the socket is not open
+   */
+  addAssistantTurn(text: string): boolean {
+    const line = (text ?? "").trim();
+    if (!line) return false;
+    return this.sendControl({ action: "utterance_assistant_turn", text: line });
+  }
+
+  /** Utterance handling: the one-sided class-1 decision threshold in (0, 1]. */
+  setUtteranceThreshold(value: number): void {
+    const next = Math.min(1, Math.max(0.001, value));
+    this.sendControl({ action: "utterance_set_threshold", value: next });
+  }
+
+  /** Utterance handling: forget the dialogue history (a new conversation). */
+  clearUtteranceHistory(): void {
+    this.sendControl({ action: "utterance_clear_history" });
+  }
+
+  /**
    * Forward a batch of browser log entries to the server. Prefers the live WS
    * (control frame); when it's closed, dispatches a best-effort HTTP beacon to
    * the resolved origin's /client_log. Returns true if dispatched either way.
@@ -548,7 +570,10 @@ export class AttentionClient {
     if (url.startsWith("ws://") || url.startsWith("wss://")) {
       //  bake the server_profile into the query (the backend
       // /ws reads it); precedence handled in applyServerProfileToWsUrl.
-      const resolved = applyServerProfileToWsUrl(url, this.opts.serverProfile, this.enableVideo);
+      const resolved = applyUtteranceHandlingToWsUrl(
+        applyServerProfileToWsUrl(url, this.opts.serverProfile, this.enableVideo),
+        this.opts.utteranceHandling === true,
+      );
       this.httpOrigin = wsUrlToHttpOrigin(resolved);
       return resolved;
     }
@@ -559,7 +584,9 @@ export class AttentionClient {
     }
     // broker bakes the selector into the wss URL it hands back; empty body =
     // legacy default profile.
-    const body = allocateBody(this.opts.serverProfile, this.enableVideo);
+    const body = allocateBody(
+      this.opts.serverProfile, this.enableVideo, this.opts.utteranceHandling === true,
+    );
     if (body) headers["Content-Type"] = "application/json";
     const r = await fetch(allocateUrl, { method: "POST", headers, body });
     if (!r.ok) {
@@ -816,6 +843,32 @@ export class AttentionClient {
           audioBase64: msg.audio_base64,
           audioPcm16: base64ToInt16(msg.audio_base64),
           durationSec: msg.duration_s,
+        });
+        break;
+      case "utterance_ended":
+        this.emit("utteranceEnded", {
+          seq: msg.seq,
+          text: msg.text ?? "",
+          prediction: msg.prediction === 1 || msg.prediction === 2 ? msg.prediction : null,
+          confidence: typeof msg.confidence === "number" ? msg.confidence : null,
+          decision: msg.decision === "not_respond" ? "not_respond" : "respond",
+          reason: msg.reason ?? "scored",
+          startS: msg.start_s,
+          endS: msg.end_s,
+          truncated: msg.truncated === true,
+          assistantTurns: msg.assistant_turns ?? 0,
+          preview: msg.preview === true,
+          latencyMs: typeof msg.latency_ms === "number" ? msg.latency_ms : null,
+          audioBase64: typeof msg.audio_base64 === "string" ? msg.audio_base64 : null,
+          audioPcm16: typeof msg.audio_base64 === "string" ? base64ToInt16(msg.audio_base64) : null,
+        });
+        break;
+      case "utterance_config":
+        this.emit("utteranceConfig", {
+          enabled: msg.enabled === true,
+          class1Threshold: typeof msg.class1_threshold === "number" ? msg.class1_threshold : 0.97,
+          preview: msg.preview !== false,
+          reason: typeof msg.reason === "string" ? msg.reason : null,
         });
         break;
       case "error":

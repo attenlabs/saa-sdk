@@ -14,6 +14,8 @@ export type {
   ConfigEvent,
   InterruptEvent,
   InterjectionEvent,
+  UtteranceEndedEvent,
+  UtteranceConfigEvent,
   StatsEvent,
   AttentionErrorEvent,
   DisconnectedEvent,

@@ -34,6 +34,29 @@ export type ServerMessage =
       audio_base64: string;
       duration_s: number;
     }
+  | {
+      type: "utterance_ended";
+      seq: number;
+      text: string;
+      prediction: 1 | 2 | null;
+      confidence: number | null;
+      decision: "respond" | "not_respond";
+      reason: string;
+      start_s: number;
+      end_s: number;
+      truncated: boolean;
+      assistant_turns: number;
+      preview: boolean;
+      latency_ms: number | null;
+      audio_base64?: string;
+    }
+  | {
+      type: "utterance_config";
+      enabled: boolean;
+      class1_threshold: number;
+      preview: boolean;
+      reason?: string;
+    }
   | { type: "error"; message: string; detail?: string }
   | { type: "pong"; client_ts?: number; server_ts?: number };
 

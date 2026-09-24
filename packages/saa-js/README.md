@@ -46,6 +46,7 @@ await client.start({ videoElement: videoEl });
 | `enableVideo`      | boolean  | `true`                               | Capture the camera internally. Set `false` for audio-only or to push frames via `feedVideo()`. |
 | `autoReconnect`    | boolean  | `true`                               | Reconnect with backoff after an unclean mid-session drop. Set `false` to surface the drop as an `error` instead. |
 | `serverProfile`    | string   | inferred                             | Server processor variant. Defaults to `"audio_only"` when `enableVideo: false`, else the full processor. Pass `"default"` to force the full processor without local video. |
+| `utteranceHandling` | boolean | `false`                              | Opt into utterance handling: per-utterance transcripts with an addressee verdict, delivered as `utteranceEnded`. See [Utterance handling](#utterance-handling). |
 | `workletUrl`       | string   | bundled                              | URL of the audio-capture AudioWorklet module. Override only when self-hosting the worklet. |
 | `video.width`      | number   | `1920`                               | Capture width. |
 | `video.height`     | number   | `1080`                               | Capture height. |
@@ -66,6 +67,9 @@ await client.start({ videoElement: videoEl });
 | `mute()` / `unmute()`       | Pause or resume audio. |
 | `markResponding(boolean)`   | Signal that your app is responding, pauses predictions until finished. |
 | `setThreshold(value)`       | Update the confidence threshold (0-1). |
+| `addAssistantTurn(text)`    | Utterance handling: feed back what the assistant said, as spoken. Returns `false` when the socket is not open. |
+| `setUtteranceThreshold(value)` | Utterance handling: the one-sided class-1 decision threshold (0-1]. Server acks via `utteranceConfig`. |
+| `clearUtteranceHistory()`   | Utterance handling: forget the dialogue history (new conversation). |
 | `isConnected`               | Getter — `true` while the WebSocket is open. |
 | `currentThreshold`          | Getter — the current confidence threshold (0-1). |
 | `on(event, listener)`       | Subscribe to an event. Returns an unsubscribe function. |
@@ -85,6 +89,8 @@ await client.start({ videoElement: videoEl });
 | `stats`          | `{ rttMs, bufferedAmount, sentVideo, skippedVideo, sentAudio, uptimeMs }` |
 | `interrupt`      | `{ fadeMs, confidence }` |
 | `interjection`   | `{ reason, audioBase64, audioPcm16, durationSec }` |
+| `utteranceEnded` | `{ seq, text, prediction, confidence, decision, reason, startS, endS, truncated, assistantTurns, preview, latencyMs, audioBase64, audioPcm16 }` |
+| `utteranceConfig` | `{ enabled, class1Threshold, preview, reason }` |
 | `error`          | `{ title, message, detail }` |
 | `disconnected`   | `{ code, reason, wasClean }` |
 | `reconnecting`   | `{ attempt, delaySec, lastCode }` |
@@ -93,6 +99,33 @@ await client.start({ videoElement: videoEl });
 `warmupComplete` fires once the server model has warmed up and is producing real predictions; use it to drop any loading UI. `prediction.responding` is `true` while your app is mid-response (see `markResponding`), and `interjection` fires when the agent should volunteer after humans go quiet.
 
 If the camera is unavailable when video capture is enabled and audio is enabled, `start()` continues with an audio-only session (`audio_only` server profile), emits an `error` with `kind: "environment"` and `title: "Camera unavailable"`. The original `enableVideo` request is restored on the next `start()`, so a later session retries video.
+
+## Utterance handling
+
+Opt in with `utteranceHandling: true`. The server then segments speech into utterances on voice
+activity, transcribes each one when it ends, and scores whether it was aimed at the device
+(`prediction: 2`) or at a person (`prediction: 1`). One `utteranceEnded` event per utterance
+carries the text, the verdict and the utterance audio; `utteranceConfig` arrives after
+`started` and says whether the feature is on for this session.
+
+The classifier is conditioned on the preceding dialogue and is unreliable without it, so feed
+back every assistant response, as spoken, with `addAssistantTurn(text)`. `assistantTurns` on the
+event shows how many assistant lines were in the scored history; `0` means you have not fed any.
+
+```js
+const client = new AttentionClient({ token, utteranceHandling: true });
+
+client.on("utteranceEnded", (u) => {
+  console.log(u.text, u.prediction, u.confidence, u.decision, u.preview);
+});
+
+// after each assistant response has been spoken
+client.addAssistantTurn(assistantTranscript);
+```
+
+This stream is independent of `turnReady`: the two will not line up one to one (a turn can hold
+two utterances, an utterance can straddle a class change). Drive your LLM from one or the
+other. While the feature is in preview, `preview` is `true` and the verdict is preview grade; the server delivers transcripts and does not retain them.
 
 ## LLM integration
 
