@@ -75,6 +75,7 @@ client = AttentionClient(
     enable_video=True,             # Set False to skip webcam capture
     server_profile=None,           # Override server profile; auto "audio_only" when enable_video=False
     auto_reconnect=True,           # Auto-reconnect with backoff after a retriable drop
+    utterance_handling=False,      # Opt into per-utterance transcripts + addressee verdicts
 )
 ```
 
@@ -106,6 +107,9 @@ client = AttentionClient(
 | `unmute()`                   | Resumes server-side turn/VAD processing. |
 | `mark_responding(bool)`      | Tell the server an LLM response is in flight. Server stops emitting predictions while `True`. |
 | `set_threshold(value: float)` | Update device-class confidence threshold (0..1). Server acks via `config` event. |
+| `add_assistant_turn(text)`   | Utterance handling: feed back what the assistant said, as spoken. Returns `False` when the socket is not open. |
+| `set_utterance_threshold(value)` | Utterance handling: the one-sided class-1 decision threshold (0..1]. Server acks via `utterance_config`. |
+| `clear_utterance_history()`  | Utterance handling: forget the dialogue history (new conversation). |
 | `feed_audio(audio, *, sample_rate=16000)` | Stream audio captured by another stack instead of the SDK's own mic. Requires `enable_audio=False`. See [Feeding external audio and video](#feeding-external-audio-and-video). |
 | `feed_video(frame)` | Push an externally-captured frame instead of the SDK's own camera. Requires `enable_video=False`. Accepts pre-encoded JPEG `bytes` or a raw `np.ndarray` (BGR, JPEG-encoded internally). See [Feeding external audio and video](#feeding-external-audio-and-video). |
 
@@ -161,6 +165,8 @@ def handle(event):
 | `@on_stats`           | `StatsEvent`                                                             | Every ~10s with connection health       |
 | `@on_interrupt`       | `InterruptEvent`                                                         | User is barging in mid-LLM-response     |
 | `@on_interjection`    | `InterjectionEvent`                                                      | Proactive AI volunteer after humans go quiet |
+| `@on_utterance_ended` | `UtteranceEndedEvent`                                                    | One finished utterance with transcript + addressee verdict (opt-in) |
+| `@on_utterance_config` | `UtteranceConfigEvent`                                                  | After `started` for opted-in sessions, and after `set_utterance_threshold` |
 | `@on_error`           | `AttentionErrorEvent`                                                    | Connection, auth, or server error       |
 | `@on_disconnected`    | `DisconnectedEvent`                                                      | WebSocket closes                        |
 | `@on_reconnecting`    | `ReconnectingEvent`                                                      | Before each auto-reconnect attempt      |
@@ -244,6 +250,39 @@ duration_sec: float        # duration in seconds
 
 Fires when humans chat and then go quiet, so the agent can volunteer a brief
 check-in. Hand `audio_base64` to your LLM as context for the volunteer prompt.
+
+#### `UtteranceEndedEvent`
+
+```python
+seq: int                       # per-session utterance counter
+text: str                      # the transcript
+prediction: int | None         # 1 aimed at a person, 2 aimed at the device, None if the classifier failed open
+confidence: float | None       # probability of the predicted class
+decision: str                  # "respond" | "not_respond" (the server's one-sided threshold, see UtteranceConfigEvent)
+reason: str                    # "scored" | "classifier_error"
+start_s: float                 # session clock, seconds
+end_s: float
+truncated: bool                # hit the server's length cap; the text is a cut window
+assistant_turns: int           # assistant turns in the scored history; 0 means none were fed back
+preview: bool                  # True while the feature is in preview
+latency_ms: int | None         # end of speech to this event, server side
+audio_pcm16: np.ndarray | None # int16 @ 16 kHz mono; None when the server omits utterance audio
+audio_base64: str | None
+```
+
+Opt in with `AttentionClient(..., utterance_handling=True)`. The classifier is conditioned on
+the preceding dialogue and is unreliable without it, so feed back every assistant response, as
+spoken, with `add_assistant_turn(text)`. This stream is independent of `turn_ready`; drive your
+LLM from one or the other. The server delivers transcripts and does not retain them.
+
+#### `UtteranceConfigEvent`
+
+```python
+enabled: bool
+class1_threshold: float
+preview: bool
+reason: str | None             # set when enabled is False (mode_off, no_classifier, no_transcriber, unsupported)
+```
 
 #### `AttentionErrorEvent`
 

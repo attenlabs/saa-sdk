@@ -29,6 +29,8 @@ from .events import (
     ConfigEvent,
     DisconnectedEvent,
     InterjectionEvent,
+    UtteranceConfigEvent,
+    UtteranceEndedEvent,
     InterruptEvent,
     PredictionEvent,
     ReconnectedEvent,
@@ -90,6 +92,7 @@ class AttentionClient:
         enable_video: bool = True,
         server_profile: Optional[str] = None,
         auto_reconnect: bool = True,
+        utterance_handling: bool = False,
     ):
         self.url = url or DEFAULT_SERVER_URL
         self.token = token
@@ -101,6 +104,8 @@ class AttentionClient:
         self._enable_video_wish = enable_video
         self.server_profile = server_profile
         self.auto_reconnect = auto_reconnect
+        # opt-in utterance pipeline: transcripts + addressee verdicts per utterance
+        self.utterance_handling = bool(utterance_handling)
         self.threshold = _clamp01(initial_threshold)
 
         self._listeners: dict[str, list[Listener]] = {}
@@ -156,6 +161,8 @@ class AttentionClient:
     def on_stats(self, func: Listener) -> Listener: return self._register("stats", func)
     def on_interrupt(self, func: Listener) -> Listener: return self._register("interrupt", func)
     def on_interjection(self, func: Listener) -> Listener: return self._register("interjection", func)
+    def on_utterance_ended(self, func: Listener) -> Listener: return self._register("utterance_ended", func)
+    def on_utterance_config(self, func: Listener) -> Listener: return self._register("utterance_config", func)
     def on_error(self, func: Listener) -> Listener: return self._register("error", func)
     def on_disconnected(self, func: Listener) -> Listener: return self._register("disconnected", func)
     def on_reconnecting(self, func: Listener) -> Listener: return self._register("reconnecting", func)
@@ -291,6 +298,27 @@ class AttentionClient:
         value = _clamp01(value)
         self.threshold = value
         self._send_control({"action": "set_threshold", "value": value})
+
+    # ── utterance handling ─────────────────────────────────────────
+
+    def add_assistant_turn(self, text: str) -> bool:
+        """Feed back what the assistant actually said, as spoken. The addressee
+        classifier is conditioned on the preceding turns and is unreliable
+        without them, so call this after every assistant response. Returns False when
+        the socket is not open (the line is not queued)."""
+        line = (text or "").strip()
+        if not line:
+            return False
+        return self._send_control({"action": "utterance_assistant_turn", "text": line})
+
+    def set_utterance_threshold(self, value: float) -> None:
+        """The one-sided class-1 decision threshold in (0, 1]."""
+        value = min(1.0, max(0.001, float(value)))
+        self._send_control({"action": "utterance_set_threshold", "value": value})
+
+    def clear_utterance_history(self) -> None:
+        """Forget the dialogue history (a new conversation)."""
+        self._send_control({"action": "utterance_clear_history"})
 
     def send_client_log(self, entries: list) -> bool:
         """Ship a batch of client log entries to the server.
@@ -455,17 +483,23 @@ class AttentionClient:
         url = self.url
         profile = self._effective_server_profile()
         if url.startswith("ws://") or url.startswith("wss://"):
-            if not profile:
-                return url
-            if self.server_profile is None:
+            resolved = url
+            if profile:
                 existing = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
-                if "server_profile" in existing:
-                    return url
-            return _append_query(url, server_profile=profile)
+                if not (self.server_profile is None and "server_profile" in existing):
+                    resolved = _append_query(resolved, server_profile=profile)
+            if self.utterance_handling:
+                resolved = _append_query(resolved, utterance_handling="1")
+            return resolved
         allocate_url = url.rstrip("/") + "/allocate"
         headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
+        selectors: dict = {}
         if profile:
-            body = json.dumps({"server_profile": profile}).encode("utf-8")
+            selectors["server_profile"] = profile
+        if self.utterance_handling:
+            selectors["utterance_handling"] = True
+        if selectors:
+            body = json.dumps(selectors).encode("utf-8")
             headers["Content-Type"] = "application/json"
         else:
             body = b""  # legacy: empty body, broker picks the default profile
@@ -792,6 +826,33 @@ class AttentionClient:
                 audio_base64=b64,
                 duration_sec=float(msg.get("duration_s") or 0.0),
             ))
+        elif t == "utterance_ended":
+            b64 = msg.get("audio_base64")
+            pred = msg.get("prediction")
+            lat = msg.get("latency_ms")
+            self._emit("utterance_ended", UtteranceEndedEvent(
+                seq=int(msg.get("seq") or 0),
+                text=str(msg.get("text") or ""),
+                prediction=int(pred) if pred in (1, 2) else None,
+                confidence=_opt_float(msg.get("confidence")),
+                decision="not_respond" if msg.get("decision") == "not_respond" else "respond",
+                reason=str(msg.get("reason") or "scored"),
+                start_s=float(msg.get("start_s") or 0.0),
+                end_s=float(msg.get("end_s") or 0.0),
+                truncated=bool(msg.get("truncated", False)),
+                assistant_turns=int(msg.get("assistant_turns") or 0),
+                preview=bool(msg.get("preview", True)),
+                latency_ms=int(lat) if isinstance(lat, (int, float)) and not isinstance(lat, bool) else None,
+                audio_pcm16=_b64_to_int16(b64) if isinstance(b64, str) else None,
+                audio_base64=b64 if isinstance(b64, str) else None,
+            ))
+        elif t == "utterance_config":
+            self._emit("utterance_config", UtteranceConfigEvent(
+                enabled=bool(msg.get("enabled")),
+                class1_threshold=float(msg.get("class1_threshold") or 0.97),
+                preview=bool(msg.get("preview", True)),
+                reason=msg.get("reason") if isinstance(msg.get("reason"), str) else None,
+            ))
         elif t == "error":
             self._emit("error", AttentionErrorEvent(
                 title="Server Error",
@@ -872,6 +933,10 @@ class AttentionClient:
                     uptime_s=now - self._ws_opened_at if self._ws_opened_at else 0.0,
                 ))
                 last_stats_at = now
+
+
+def _opt_float(value) -> Optional[float]:
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
 def _clamp01(v: float) -> float:

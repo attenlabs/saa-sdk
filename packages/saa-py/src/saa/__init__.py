@@ -18,6 +18,8 @@ from .events import (
     StatsEvent,
     TurnFrame,
     TurnReadyEvent,
+    UtteranceConfigEvent,
+    UtteranceEndedEvent,
     VadEvent,
 )
 
@@ -34,6 +36,8 @@ __all__ = [
     "StatsEvent",
     "InterruptEvent",
     "InterjectionEvent",
+    "UtteranceEndedEvent",
+    "UtteranceConfigEvent",
     "AttentionErrorEvent",
     "DisconnectedEvent",
     "ReconnectingEvent",
@@ -41,4 +45,4 @@ __all__ = [
     "ConversationState",
 ]
 
-__version__ = "0.7.2"
+__version__ = "0.9"

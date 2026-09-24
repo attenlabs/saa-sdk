@@ -89,6 +89,45 @@ class InterjectionEvent:
 
 
 @dataclass
+class UtteranceEndedEvent:
+    """One finished utterance from the utterance pipeline (opt-in via
+    ``utterance_handling=True``).
+
+    ``prediction`` is 1 (aimed at a person) or 2 (aimed at the device), or
+    None when the classifier failed open (``reason == "classifier_error"``);
+    ``decision`` applies the server's one-sided threshold (see
+    ``UtteranceConfigEvent.class1_threshold``). ``assistant_turns == 0`` means
+    no assistant lines were fed back with ``add_assistant_turn`` and the
+    verdict is unreliable. While the feature is in preview, ``preview`` is True
+    and the verdict is preview grade.
+    """
+    seq: int
+    text: str
+    prediction: Optional[int]
+    confidence: Optional[float]
+    decision: str                       # "respond" | "not_respond"
+    reason: str                         # "scored" | "classifier_error"
+    start_s: float                      # session clock, seconds
+    end_s: float
+    truncated: bool                     # hit the server's length cap; the text is a cut window
+    assistant_turns: int
+    preview: bool
+    latency_ms: Optional[int]           # end of speech to this event, server side
+    audio_pcm16: Optional[np.ndarray]   # int16, 16 kHz mono; None when the server omits audio
+    audio_base64: Optional[str]
+
+
+@dataclass
+class UtteranceConfigEvent:
+    """Sent once after ``started`` for sessions that requested utterance
+    handling, and again after ``set_utterance_threshold``."""
+    enabled: bool
+    class1_threshold: float
+    preview: bool
+    reason: Optional[str] = None        # set when enabled is False
+
+
+@dataclass
 class StatsEvent:
     rtt_ms: Optional[float]
     sent_video: int
