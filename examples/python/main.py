@@ -310,6 +310,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--no-audio", action="store_true", help="Disable mic capture")
     p.add_argument("--no-llm", action="store_true",
                    help="Disable LLM stage even if --openai-key is set")
+    p.add_argument("--utterance-handling", action="store_true",
+                   help="Opt into utterance handling (preview): transcript + addressee verdict per utterance")
     p.add_argument("--log-level", default="WARNING",
                    help="Logging level (DEBUG, INFO, WARNING, ERROR)")
     return p.parse_args()
@@ -365,6 +367,7 @@ def main() -> int:
         initial_threshold=args.threshold,
         enable_audio=enable_audio,
         enable_video=enable_video,
+        utterance_handling=args.utterance_handling,
     )
 
     ui = TerminalUI()
@@ -396,7 +399,13 @@ def main() -> int:
 
         llm.on("speaking_start", on_speaking_start)
         llm.on("speaking_end", on_speaking_end)
-        llm.on("transcript", lambda t: ui.log(f"LLM: {t[:60]}"))
+        def on_transcript(t):
+            ui.log(f"LLM: {t[:60]}")
+            # the addressee classifier is conditioned on the dialogue: feed back what the assistant said
+            if args.utterance_handling:
+                client.add_assistant_turn(t)
+
+        llm.on("transcript", on_transcript)
         llm.on("error", lambda e: ui.log(f"LLM error: {e['title']}: {e['message']}"))
     else:
         ui.log("LLM disabled — set --openai-key or OPENAI_API_KEY to enable")
@@ -438,6 +447,17 @@ def main() -> int:
     def _(event):
         rtt = f"{event.rtt_ms:.0f}ms" if event.rtt_ms is not None else "n/a"
         ui.log(f"stats rtt={rtt} v={event.sent_video}(-{event.skipped_video}) a={event.sent_audio}")
+
+    @client.on_utterance_config
+    def _(event):
+        ui.log(f"utterance handling {'on' if event.enabled else 'off'}"
+               + (f" ({event.reason})" if event.reason else "")
+               + f" preview={event.preview} threshold={event.class1_threshold:.2f}")
+
+    @client.on_utterance_ended
+    def _(event):
+        ui.log(f"utterance #{event.seq} pred={event.prediction} {event.decision} "
+               f"turns={event.assistant_turns} preview={event.preview}: {event.text[:60]}")
 
     @client.on_interrupt
     def _(event):

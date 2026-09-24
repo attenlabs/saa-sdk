@@ -166,6 +166,8 @@ Try three thresholds with `--threshold` and keep the best:
 --no-video          Disable webcam capture
 --no-audio          Disable mic capture
 --no-llm            Disable LLM stage even if a key is set
+--utterance-handling  Opt into utterance handling (preview): transcript + addressee verdict per utterance,
+                    logged as `utterance #N`; LLM replies are fed back with add_assistant_turn
 --log-level         DEBUG, INFO, WARNING, ERROR (default WARNING)
 ```
 
