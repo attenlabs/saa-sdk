@@ -93,6 +93,7 @@ The send threshold is the confidence required to treat speech as device-directed
 - `SAA_API_KEY` is your attention labs API key, the same credential for the streaming SDK and the LiveKit and Pipecat samples. Get one at [attentionlabs.ai](https://attentionlabs.ai).
 - LiveKit samples additionally need `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, plus per-sample provider keys. See each sample's `.env.example`.
 - Pipecat samples need `DAILY_API_KEY` (Daily REST key; mints the bot meeting token locally), plus per-sample provider keys.
+- `SAA_UTTERANCE_HANDLING=1` opts a sample into utterance handling (preview): one transcript + addressee verdict per utterance, delivered as `utterance_ended` next to `turn_ready`. Each sample logs the utterances and feeds the assistant's replies back with `add_assistant_turn`, which the classifier needs for context. The web demo takes `?utterance=1`, the Python demo `--utterance-handling`. Off by default.
 
 ## See also
 
