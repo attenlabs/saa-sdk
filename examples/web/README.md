@@ -46,6 +46,7 @@ All optional. The token / key fields stay editable in the UI. URL params just au
 | ------------- | ----- |
 | `token`       | Pre-fills the SAA auth token field. |
 | `openai_key`  | Pre-fills the OpenAI key field.  Omit to just watch predictions and VAD.  |
+| `utterance`   | Opts into utterance handling (preview): one transcript + addressee verdict per utterance, logged to the console as `[saa] utterance #N`; LLM replies are fed back with `addAssistantTurn`. |
 
 Example: `/?token=al_live_…&openai_key=sk-…`
 

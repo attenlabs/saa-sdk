@@ -35,12 +35,14 @@ const GUIDE_STEPS = {
   DONE: 4,
 };
 
-// URL params: ?server=… ?token=… ?openai_key=…
+// URL params: ?server=… ?token=… ?openai_key=… ?utterance=1
 const params = new URLSearchParams(location.search);
 const serverOverride = params.get("server") || undefined;
 const urlToken = params.get("token");
 const urlOpenai = params.get("openai_key");
 const ENABLE_GREETING = !params.has("nogreet");
+// utterance handling (preview): transcript + addressee verdict per utterance, logged to the console
+const ENABLE_UTTERANCE = params.has("utterance");
 
 // ── DOM refs ────────────────────────────────────────────────────────────────
 const authPanel    = document.getElementById("authPanel");
@@ -403,6 +405,7 @@ async function start() {
     url: serverOverride,
     token,
     initialThreshold: modelClass2Threshold,
+    utteranceHandling: ENABLE_UTTERANCE,
   });
 
   client.on("connected", () => {
@@ -475,6 +478,17 @@ async function start() {
       llm.sendAudioB64(e.audioBase64, e.frames ?? []);
     }
     render();
+  });
+
+  client.on("utteranceConfig", (e) => {
+    console.log(`[saa] utterance handling ${e.enabled ? "on" : "off"}${e.reason ? ` (${e.reason})` : ""}`
+      + ` preview=${e.preview} threshold=${e.class1Threshold}`);
+  });
+
+  client.on("utteranceEnded", (u) => {
+    // independent of turnReady: the verdict is preview grade while u.preview is true
+    console.log(`[saa] utterance #${u.seq} pred=${u.prediction} ${u.decision} turns=${u.assistantTurns}`
+      + ` preview=${u.preview}:`, u.text);
   });
 
   client.on("config", (e) => {
@@ -557,6 +571,10 @@ async function start() {
         if (client) { client.unmute(); client.markResponding(false); }
         render();
       }, POST_PLAYBACK_MUTE_HOLD_MS);
+    });
+    llm.on("transcript", (t) => {
+      // the addressee classifier is conditioned on the dialogue: feed back what the assistant said
+      if (ENABLE_UTTERANCE && client) client.addAssistantTurn(t);
     });
     llm.on("error", (e) => {
       toast(`LLM ${e.title || "error"}: ${e.message}`);
