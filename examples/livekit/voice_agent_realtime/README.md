@@ -17,6 +17,7 @@ A single file ([`agent.py`](./agent.py)):
 - `@engine.on_interrupt` → `session.interrupt()`
 - `@engine.on_interjection` → `session.generate_reply(...)`
 - `@session.on("agent_state_changed")` → `responding_start`/`responding_stop` (so interrupt/interjection fire correctly)
+- with `SAA_UTTERANCE_HANDLING=1`: `@engine.on_utterance_ended` logs each transcript + verdict, and `conversation_item_added` feeds assistant replies back via `engine.add_assistant_turn(...)`
 
 ## Quickstart
 

@@ -123,6 +123,12 @@ function onData(payload, _participant, _kind, topic) {
     case "interrupt": console.log("[saa] interrupt", msg); break;
     case "interjection": console.log("[saa] interjection", msg); break;
     case "config": console.log("[saa] threshold", msg.model_class2_threshold); break;
+    // utterance handling (opt-in on the voice agent): transcript + addressee verdict per utterance;
+    // the audio, when present, arrives as a byte stream matched by stream_id (logged in onByteStream)
+    case "utterance_ended":
+      console.log(`[saa] utterance #${msg.seq} pred=${msg.prediction} ${msg.decision} preview=${msg.preview}:`, msg.text);
+      break;
+    case "utterance_config": console.log("[saa] utterance handling", msg); break;
   }
 }
 

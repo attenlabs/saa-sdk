@@ -24,6 +24,9 @@ from dotenv import load_dotenv
 # auto-load the shared examples/livekit/.env
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
+# opt-in utterance handling (preview): one transcript + addressee verdict per utterance
+UTTERANCE_HANDLING = os.environ.get("SAA_UTTERANCE_HANDLING", "").strip().lower() in ("1", "true", "yes")
+
 logger = logging.getLogger("voice-agent-realtime")
 
 # per-run log file at DEBUG; also captures livekit-agents + openai plugin internals
@@ -75,6 +78,7 @@ async def entrypoint(ctx: JobContext) -> None:
         room_name=ctx.room.name,
         participant_identity=user.identity,
         attention_config={"frames_per_turn": 0},
+        utterance_handling=UTTERANCE_HANDLING,
     )
     ctx.add_shutdown_callback(saa.stop)
 
@@ -116,6 +120,19 @@ async def entrypoint(ctx: JobContext) -> None:
         if not inject_realtime_turn(session, ev, instructions=INTERJECTION_INSTRUCTIONS):
             logger.warning("no realtime session — dropped interjection")
 
+    # utterance handling: observed only, never drives the model (turn_ready does)
+    @engine.on_utterance_config
+    def _(cfg) -> None:
+        logger.info("utterance handling %s%s preview=%s threshold=%.2f",
+                    "on" if cfg.enabled else "off", f" ({cfg.reason})" if cfg.reason else "",
+                    cfg.preview, cfg.class1_threshold)
+
+    @engine.on_utterance_ended
+    def _(u) -> None:
+        logger.info("utterance #%d pred=%s conf=%s decision=%s turns=%d preview=%s %r",
+                    u.seq, u.prediction, f"{u.confidence:.2f}" if u.confidence is not None else "-",
+                    u.decision, u.assistant_turns, u.preview, u.text)
+
     # tell SAA when our agent is speaking — arms interrupt, suppresses interjection
     @session.on("agent_state_changed")
     def _(ev) -> None:
@@ -135,7 +152,12 @@ async def entrypoint(ctx: JobContext) -> None:
 
     @session.on("conversation_item_added")
     def _(ev) -> None:
-        logger.info("item_added role=%s", getattr(ev.item, "role", "?"))
+        role = getattr(ev.item, "role", "?")
+        logger.info("item_added role=%s", role)
+        # the addressee classifier is conditioned on the dialogue: feed back what the assistant said
+        text = getattr(ev.item, "text_content", None)
+        if UTTERANCE_HANDLING and role == "assistant" and text:
+            asyncio.create_task(engine.add_assistant_turn(text))
 
     @session.on("speech_created")
     def _(ev) -> None:

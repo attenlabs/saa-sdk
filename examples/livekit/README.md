@@ -99,6 +99,18 @@ async def _(ev): await session.generate_reply(instructions="...")  # proactive
 
 Plus a `@session.on("agent_state_changed")` hook that calls `engine.responding_start()` / `responding_stop()` so SAA knows when your agent is the one speaking, required for interrupt and interjection to fire correctly.
 
+## Utterance handling (preview)
+
+Set `SAA_UTTERANCE_HANDLING=1` and the realtime sample opens its session with
+`utterance_handling=True`. 
+
+SAA then delivers one `UtteranceEndedEvent` per utterance (transcript
+plus an addressee verdict) next to `turn_ready`; the sample logs each one and feeds the agent's
+replies back with `engine.add_assistant_turn(...)` from `conversation_item_added`, which the
+classifier needs for context. 
+
+The browser overlay logs the same `utterance_ended` envelopes.
+
 ## Requirements & limitations
 
 - The agent's LiveKit URL must be reachable from the SAA cloud.
