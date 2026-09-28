@@ -22,7 +22,7 @@ from livekit import rtc
 from . import _wire
 from .types import (
     ErrorEvent, InterjectionEvent, InterruptEvent,
-    PredictionEvent, TurnReadyEvent, VADEvent,
+    PredictionEvent, TurnReadyEvent, UtteranceConfigEvent, UtteranceEndedEvent, VADEvent,
 )
 
 
@@ -74,6 +74,8 @@ class AttentionEngine:
         self._cb_interjection: SyncOrAsync[InterjectionEvent] | None = None
         self._cb_error: SyncOrAsync[ErrorEvent] | None = None
         self._cb_warmup: NullaryCallback | None = None
+        self._cb_utterance_ended: SyncOrAsync[UtteranceEndedEvent] | None = None
+        self._cb_utterance_config: SyncOrAsync[UtteranceConfigEvent] | None = None
 
         # State
         self._is_ready = False
@@ -82,6 +84,7 @@ class AttentionEngine:
         self._startup_error: ErrorEvent | None = None
         self._latest_prediction: PredictionEvent | None = None
         self._latest_threshold: float | None = None
+        self._latest_utterance_config: UtteranceConfigEvent | None = None
 
         # Pending turn envelopes keyed by stream_id. The byte stream typically
         # arrives just after the JSON envelope but ordering isn't guaranteed.
@@ -89,6 +92,8 @@ class AttentionEngine:
         # Pending interjection envelopes — same shape, separate dict so we
         # don't mix types when matching stream_id → typed event.
         self._pending_interjections: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        # Pending utterance envelopes — their audio rides the same byte-stream path.
+        self._pending_utterances: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
         self._data_handler: Callable | None = None
         self._started = False
@@ -160,6 +165,11 @@ class AttentionEngine:
     def agent_identity(self) -> str:
         return self._agent_identity
 
+    @property
+    def latest_utterance_config(self) -> UtteranceConfigEvent | None:
+        """The last `utterance_config` (None until the hosted agent sends one)."""
+        return self._latest_utterance_config
+
     # ── Callback registration (decorator form) ───────────────────────────
 
     def on_prediction(self, fn: SyncOrAsync[PredictionEvent]) -> SyncOrAsync[PredictionEvent]:
@@ -201,6 +211,18 @@ class AttentionEngine:
         self._cb_warmup = fn
         return fn
 
+    def on_utterance_ended(self, fn: SyncOrAsync[UtteranceEndedEvent]) -> SyncOrAsync[UtteranceEndedEvent]:
+        """fn(UtteranceEndedEvent) — one per finished utterance, for sessions
+        opened with `utterance_handling=True`."""
+        self._cb_utterance_ended = fn
+        return fn
+
+    def on_utterance_config(self, fn: SyncOrAsync[UtteranceConfigEvent]) -> SyncOrAsync[UtteranceConfigEvent]:
+        """fn(UtteranceConfigEvent) — after `started` for opted-in sessions and
+        after every `set_utterance_threshold`."""
+        self._cb_utterance_config = fn
+        return fn
+
     # ── Upstream actions (scoped to the hidden agent) ────────────────────
 
     async def mute(self) -> None:
@@ -227,6 +249,29 @@ class AttentionEngine:
         """
         v = max(0.0, min(1.0, float(value)))
         await self._send_action({"action": "set_threshold", "value": v})
+
+    # ── Utterance handling (opt-in sessions) ─────────────────────────────
+
+    async def add_assistant_turn(self, text: str) -> bool:
+        """Feed back what the assistant actually said, as spoken. The addressee
+        classifier is conditioned on the preceding turns and is unreliable
+        without them, so call this after every assistant response. Returns
+        False for an empty line (nothing is sent)."""
+        line = (text or "").strip()
+        if not line:
+            return False
+        await self._send_action({"action": "utterance_assistant_turn", "text": line})
+        return True
+
+    async def set_utterance_threshold(self, value: float) -> None:
+        """The one-sided class-1 decision threshold in (0, 1]. The hosted
+        agent acks with an `UtteranceConfigEvent`."""
+        v = min(1.0, max(0.001, float(value)))
+        await self._send_action({"action": "utterance_set_threshold", "value": v})
+
+    async def clear_utterance_history(self) -> None:
+        """Forget the dialogue history (a new conversation)."""
+        await self._send_action({"action": "utterance_clear_history"})
 
     # ── Internals ────────────────────────────────────────────────────────
 
@@ -279,6 +324,10 @@ class AttentionEngine:
             # model produced its first real prediction (warmed up + predicting)
             if self._cb_warmup is not None:
                 _invoke_nullary(self._cb_warmup)
+        elif evt_type == "utterance_ended":
+            self._dispatch_utterance_envelope(envelope)
+        elif evt_type == "utterance_config":
+            self._dispatch_utterance_config(envelope)
         elif evt_type == "config":
             self._latest_threshold = envelope.get("model_class2_threshold")
         elif evt_type == "error":
@@ -364,6 +413,10 @@ class AttentionEngine:
         env = self._pending_interjections.pop(stream_id, None)
         if env is not None:
             self._fire_interjection(env, parsed)
+            return
+        env = self._pending_utterances.pop(stream_id, None)
+        if env is not None:
+            self._fire_utterance_ended(env, parsed)
             return
         # Envelope hasn't arrived yet stash the parsed payload by stream_id
         self._stash_pending(self._pending_turns, stream_id, {"_orphan_payload": parsed})
@@ -476,6 +529,64 @@ class AttentionEngine:
             duration=float(env.get("duration") or 0.0),
         )
         _invoke(self._cb_interjection, ev)
+
+    def _dispatch_utterance_envelope(self, env: dict[str, Any]) -> None:
+        stream_id = env.get("stream_id")
+        if not stream_id:
+            # the hosted agent was configured without utterance audio: no byte stream follows
+            self._fire_utterance_ended(env, None)
+            return
+        orphan = self._pending_turns.pop(stream_id, None)
+        if orphan and "_orphan_payload" in orphan:
+            self._fire_utterance_ended(env, orphan["_orphan_payload"])
+            return
+        self._stash_pending(self._pending_utterances, stream_id, env)
+
+    def _dispatch_utterance_config(self, env: dict[str, Any]) -> None:
+        ev = _utterance_config_event(env)
+        self._latest_utterance_config = ev
+        if self._cb_utterance_config is not None:
+            _invoke(self._cb_utterance_config, ev)
+
+    def _fire_utterance_ended(self, env: dict[str, Any], parsed: "_wire.ParsedTurnPayload | None") -> None:
+        if self._cb_utterance_ended is None:
+            return
+        _invoke(self._cb_utterance_ended, _utterance_event(env, parsed.pcm16 if parsed is not None else None))
+
+
+def _utterance_event(env: dict[str, Any], pcm16: bytes | None) -> UtteranceEndedEvent:
+    """Public `utterance_ended` envelope -> typed event; unknown or missing
+    fields fall back to safe values rather than raising inside the transport
+    callback."""
+    pred = env.get("prediction")
+    conf = env.get("confidence")
+    lat = env.get("latency_ms")
+    return UtteranceEndedEvent(
+        seq=int(env.get("seq") or 0),
+        text=str(env.get("text") or ""),
+        prediction=int(pred) if pred in (1, 2) and not isinstance(pred, bool) else None,
+        confidence=float(conf) if isinstance(conf, (int, float)) and not isinstance(conf, bool) else None,
+        decision="not_respond" if env.get("decision") == "not_respond" else "respond",
+        reason="classifier_error" if env.get("reason") == "classifier_error" else "scored",
+        start_s=float(env.get("start_s") or 0.0),
+        end_s=float(env.get("end_s") or 0.0),
+        truncated=bool(env.get("truncated", False)),
+        assistant_turns=int(env.get("assistant_turns") or 0),
+        preview=bool(env.get("preview", True)),
+        latency_ms=int(lat) if isinstance(lat, (int, float)) and not isinstance(lat, bool) else None,
+        audio_pcm16=pcm16,
+    )
+
+
+def _utterance_config_event(env: dict[str, Any]) -> UtteranceConfigEvent:
+    thr = env.get("class1_threshold")
+    reason = env.get("reason")
+    return UtteranceConfigEvent(
+        enabled=bool(env.get("enabled")),
+        class1_threshold=float(thr) if isinstance(thr, (int, float)) and not isinstance(thr, bool) else 0.97,
+        preview=bool(env.get("preview", True)),
+        reason=reason if isinstance(reason, str) else None,
+    )
 
 
 def _invoke(fn: SyncOrAsync, arg: Any) -> None:

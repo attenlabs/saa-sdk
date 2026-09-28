@@ -132,10 +132,12 @@ Environment: `SAA_API_KEY`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_UR
 | `InterruptEvent` | user barges in during AI playback | `confidence` |
 | `InterjectionEvent` | humans went quiet after side-chat | `reason`, `audio_pcm16`, `duration` |
 | `ErrorEvent` | out-of-band errors | `code`, `message` |
+| `UtteranceEndedEvent` | one finished utterance (opt-in, see [Utterance handling](#utterance-handling)) | `seq`, `text`, `prediction`, `confidence`, `decision`, `reason`, `start_s`, `end_s`, `truncated`, `assistant_turns`, `preview`, `latency_ms`, `audio_pcm16` |
+| `UtteranceConfigEvent` | after `started` for opted-in sessions, and after `set_utterance_threshold` | `enabled`, `class1_threshold`, `preview`, `reason` |
 
 Classes: `0`=silent, `1`=human-to-human, `2`=human-to-device. `responding` is `True` while the AI is mid-playback.
 
-Each is delivered through an `@engine.on_*` callback: `on_prediction`, `on_vad`, `on_warmup`, `on_listening_start`, `on_listening_cancelled`, `on_turn_ready`, `on_interrupt`, `on_interjection`, `on_error`.
+Each is delivered through an `@engine.on_*` callback: `on_prediction`, `on_vad`, `on_warmup`, `on_listening_start`, `on_listening_cancelled`, `on_turn_ready`, `on_interrupt`, `on_interjection`, `on_error`, `on_utterance_ended`, `on_utterance_config`.
 
 ## Upstream actions
 
@@ -145,10 +147,43 @@ await engine.unmute()
 await engine.responding_start()           # AI is now speaking
 await engine.responding_stop()
 await engine.set_threshold(0.65)          # model class-2 confidence threshold
+await engine.add_assistant_turn(text)     # utterance handling: what the assistant said, as spoken
+await engine.set_utterance_threshold(0.9) # utterance handling: one-sided class-1 decision threshold
+await engine.clear_utterance_history()    # utterance handling: forget the dialogue history
 ```
 
 These are routed only to the SAA agent (`destination_identities=[...]`)
 so they never leak to other room participants.
+
+## Utterance handling
+
+Opt in with `start_attention_session(..., utterance_handling=True)`. The hosted agent then
+segments speech into utterances on voice activity, transcribes each one when it ends, and
+scores whether it was aimed at the device (`prediction == 2`) or at a person
+(`prediction == 1`). One `UtteranceEndedEvent` per utterance carries the text, the verdict
+and the utterance audio; `UtteranceConfigEvent` arrives after `started` and says whether the
+feature is on for this session.
+
+The classifier is conditioned on the preceding dialogue and is unreliable without it, so feed
+back every assistant response, as spoken, with `await engine.add_assistant_turn(text)`.
+`assistant_turns` on the event shows how many assistant lines were in the scored history; `0`
+means you have not fed any.
+
+```python
+saa = await start_attention_session(..., utterance_handling=True)
+engine = AttentionEngine(ctx.room, agent_identity=saa.agent_identity)
+
+@engine.on_utterance_ended
+def _(u):
+    print(u.text, u.prediction, u.confidence, u.decision, u.preview)
+
+# after each assistant response has been spoken
+await engine.add_assistant_turn(assistant_transcript)
+```
+
+This stream is independent of `TurnReadyEvent`: the two will not line up one to one. Drive
+your LLM from one or the other. While the feature is in preview, `preview` is `True` and the
+verdict is preview grade; the server delivers transcripts and does not retain them.
 
 ## Requirements
 

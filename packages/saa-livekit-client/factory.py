@@ -32,7 +32,7 @@ from livekit.agents import JobContext
 from .api import start_attention_session
 from .engine import AttentionEngine
 from .tokens import DEFAULT_AGENT_IDENTITY, attention_agent_token
-from .types import InterjectionEvent, InterruptEvent, TurnReadyEvent
+from .types import InterjectionEvent, InterruptEvent, TurnReadyEvent, UtteranceEndedEvent
 
 
 logger = logging.getLogger("saa_livekit_client.factory")
@@ -41,6 +41,7 @@ logger = logging.getLogger("saa_livekit_client.factory")
 OnTurnCallback = Callable[[TurnReadyEvent, JobContext], Awaitable[None]]
 OnInterruptCallback = Callable[[InterruptEvent, JobContext], Awaitable[None]]
 OnInterjectionCallback = Callable[[InterjectionEvent, JobContext], Awaitable[None]]
+OnUtteranceCallback = Callable[[UtteranceEndedEvent, JobContext], Awaitable[None]]
 
 
 def build_attention_entrypoint(
@@ -48,11 +49,13 @@ def build_attention_entrypoint(
     on_turn: OnTurnCallback,
     on_interrupt: OnInterruptCallback | None = None,
     on_interjection: OnInterjectionCallback | None = None,
+    on_utterance_ended: OnUtteranceCallback | None = None,
     saa_api_key: str | None = None,
     lk_api_key: str | None = None,
     lk_api_secret: str | None = None,
     livekit_url: str | None = None,
     attention_config: dict[str, Any] | None = None,
+    utterance_handling: bool = False,
     agent_identity: str = DEFAULT_AGENT_IDENTITY,
     api_base: str | None = None,
 ) -> Callable[[JobContext], Awaitable[None]]:
@@ -105,6 +108,7 @@ def build_attention_entrypoint(
             room_name=ctx.room.name,
             participant_identity=user.identity,
             attention_config=attention_config,
+            utterance_handling=utterance_handling,
             **({"api_base": api_base} if api_base else {}),
         )
 
@@ -119,6 +123,11 @@ def build_attention_entrypoint(
             @engine.on_interjection
             async def _on_interjection(ev: InterjectionEvent) -> None:
                 await on_interjection(ev, ctx)
+
+        if on_utterance_ended is not None:
+            @engine.on_utterance_ended
+            async def _on_utterance(ev: UtteranceEndedEvent) -> None:
+                await on_utterance_ended(ev, ctx)
 
         @engine.on_turn_ready
         async def _on_turn(ev: TurnReadyEvent) -> None:

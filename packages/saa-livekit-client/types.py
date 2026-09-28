@@ -128,3 +128,53 @@ class ErrorEvent:
 
     code: str
     message: str
+
+
+UtteranceDecision = Literal["respond", "not_respond"]
+UtteranceReason = Literal["scored", "classifier_error"]
+
+
+@dataclass(frozen=True)
+class UtteranceEndedEvent:
+    """One finished utterance from the utterance pipeline (opt-in via
+    `start_attention_session(..., utterance_handling=True)`).
+
+    `prediction` is 1 (aimed at a person) or 2 (aimed at the device), or None
+    when the classifier failed open (`reason == "classifier_error"`);
+    `decision` applies the server's one-sided threshold (see
+    `UtteranceConfigEvent.class1_threshold`). `assistant_turns == 0` means no
+    assistant lines were fed back with `add_assistant_turn` and the verdict
+    is unreliable. While the feature is in preview, `preview` is True and the
+    verdict is preview grade.
+
+    `audio_pcm16` is int16 mono PCM at 16 kHz, None when the server omits
+    utterance audio. This stream is independent of `TurnReadyEvent`.
+    """
+
+    seq: int
+    text: str
+    prediction: int | None
+    confidence: float | None
+    decision: UtteranceDecision
+    reason: UtteranceReason
+    start_s: float
+    end_s: float
+    truncated: bool
+    assistant_turns: int
+    preview: bool
+    latency_ms: int | None
+    audio_pcm16: bytes | None = None
+
+
+@dataclass(frozen=True)
+class UtteranceConfigEvent:
+    """Sent once after `started` for sessions that requested utterance
+    handling, and again after `set_utterance_threshold`. `reason` is set
+    when `enabled` is False (mode_off, no_classifier, no_transcriber,
+    unsupported).
+    """
+
+    enabled: bool
+    class1_threshold: float
+    preview: bool
+    reason: str | None = None

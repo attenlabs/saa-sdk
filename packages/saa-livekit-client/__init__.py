@@ -12,7 +12,8 @@ Public exports:
 
 Event types:
     PredictionEvent, VADEvent, TurnReadyEvent, TurnFrame,
-    InterruptEvent, InterjectionEvent, ErrorEvent
+    InterruptEvent, InterjectionEvent, ErrorEvent,
+    UtteranceEndedEvent, UtteranceConfigEvent (opt-in utterance handling)
 """
 from .api import (
     AttentionAPIError,
@@ -29,11 +30,13 @@ from .types import (
     PredictionEvent,
     TurnFrame,
     TurnReadyEvent,
+    UtteranceConfigEvent,
+    UtteranceEndedEvent,
     VADEvent,
 )
 
 
-__version__ = "0.3.3"
+__version__ = "0.4"
 
 __all__ = [
     # Engine
@@ -47,6 +50,7 @@ __all__ = [
     # Event types
     "PredictionEvent", "VADEvent", "TurnReadyEvent", "TurnFrame",
     "InterruptEvent", "InterjectionEvent", "ErrorEvent",
+    "UtteranceEndedEvent", "UtteranceConfigEvent",
     # Version
     "__version__",
 ]
