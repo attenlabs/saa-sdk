@@ -23,7 +23,7 @@ void saa_client_set_log_fn(void (*fn)(int level, const char *msg, void *ud), voi
     pthread_mutex_unlock(&g_mu);
 }
 
-void saa_log_register_token(const char *token)
+void saac_log_register_token(const char *token)
 {
     if (!token || strlen(token) < 4) return;
     pthread_mutex_lock(&g_mu);
@@ -39,7 +39,7 @@ out:
     pthread_mutex_unlock(&g_mu);
 }
 
-void saa_log_unregister_token(const char *token)
+void saac_log_unregister_token(const char *token)
 {
     if (!token) return;
     pthread_mutex_lock(&g_mu);
@@ -74,7 +74,7 @@ static void redact_locked(char *dst, size_t cap, const char *src)
     dst[o] = '\0';
 }
 
-void saa_log_redact(char *dst, size_t cap, const char *src)
+void saac_log_redact(char *dst, size_t cap, const char *src)
 {
     pthread_mutex_lock(&g_mu);
     redact_locked(dst, cap, src ? src : "");
@@ -91,7 +91,7 @@ static const char *level_name(int level)
     }
 }
 
-void saa_log(int level, const char *fmt, ...)
+void saac_log(int level, const char *fmt, ...)
 {
     char raw[LINE_MAX_], line[LINE_MAX_];
     va_list ap;

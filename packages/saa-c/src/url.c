@@ -5,7 +5,7 @@
 #include <string.h>
 #include <strings.h>
 
-int saa_url_parse(const char *url, saa_url_t *out)
+int saac_url_parse(const char *url, saac_url_t *out)
 {
     static const struct { const char *scheme; int tls, ws, port; } schemes[] = {
         { "https://", 1, 0, 443 }, { "http://", 0, 0, 80 },
@@ -68,7 +68,7 @@ int saa_url_parse(const char *url, saa_url_t *out)
     return 0;
 }
 
-int saa_profile_valid(const char *profile)
+int saac_profile_valid(const char *profile)
 {
     if (!profile) return 0;
     size_t n = strlen(profile);
@@ -80,7 +80,7 @@ int saa_profile_valid(const char *profile)
     return 1;
 }
 
-const char *saa_profile_effective(const char *explicit_profile, saa_video_mode_t mode)
+const char *saac_profile_effective(const char *explicit_profile, saa_video_mode_t mode)
 {
     if (explicit_profile) return strcmp(explicit_profile, "default") ? explicit_profile : NULL;
     return mode == SAA_VIDEO_NONE ? "audio_only" : NULL;
@@ -109,12 +109,12 @@ static int append_param(char *out, size_t cap, size_t *o, int *first, const char
     return append(out, cap, o, s, n);
 }
 
-int saa_url_apply_direct_query(saa_url_t *url, const char *explicit_profile, saa_video_mode_t mode,
-                               int utterance)
+int saac_url_apply_direct_query(saac_url_t *url, const char *explicit_profile, saa_video_mode_t mode,
+                                int utterance)
 {
     int keep_url_profile = explicit_profile && !strcmp(explicit_profile, "default");
     const char *replace = (explicit_profile && !keep_url_profile) ? explicit_profile : NULL;
-    const char *inferred = explicit_profile ? NULL : saa_profile_effective(NULL, mode);
+    const char *inferred = explicit_profile ? NULL : saac_profile_effective(NULL, mode);
 
     char out[sizeof url->path];
     size_t o = 0;
@@ -165,7 +165,7 @@ int saa_url_apply_direct_query(saa_url_t *url, const char *explicit_profile, saa
     return 0;
 }
 
-int saa_url_allocate_path(const saa_url_t *broker, char *out, size_t cap)
+int saac_url_allocate_path(const saac_url_t *broker, char *out, size_t cap)
 {
     const char *q = strchr(broker->path, '?');
     size_t base = q ? (size_t)(q - broker->path) : strlen(broker->path);
