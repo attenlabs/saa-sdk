@@ -25,7 +25,7 @@ from pipecat.transports.daily.transport import DailyTransport
 from .api import SessionHandle, start_attention_session
 from .engine import AttentionEngine
 from .tokens import DEFAULT_AGENT_IDENTITY, attention_agent_token
-from .types import InterjectionEvent, InterruptEvent, TurnReadyEvent
+from .types import InterjectionEvent, InterruptEvent, TurnReadyEvent, UtteranceEndedEvent
 
 
 logger = logging.getLogger("saa_pipecat_client.factory")
@@ -34,6 +34,7 @@ logger = logging.getLogger("saa_pipecat_client.factory")
 OnTurnCallback = Callable[[TurnReadyEvent, DailyTransport], Awaitable[None]]
 OnInterruptCallback = Callable[[InterruptEvent, DailyTransport], Awaitable[None]]
 OnInterjectionCallback = Callable[[InterjectionEvent, DailyTransport], Awaitable[None]]
+OnUtteranceCallback = Callable[[UtteranceEndedEvent, DailyTransport], Awaitable[None]]
 
 RunCallable = Callable[[str, str, str, DailyTransport, Any], Awaitable[tuple[AttentionEngine, SessionHandle]]]
 
@@ -43,9 +44,11 @@ def build_attention_runner(
     on_turn: OnTurnCallback,
     on_interrupt: OnInterruptCallback | None = None,
     on_interjection: OnInterjectionCallback | None = None,
+    on_utterance_ended: OnUtteranceCallback | None = None,
     daily_api_key: str | None = None,
     saa_api_key: str | None = None,
     attention_config: dict[str, Any] | None = None,
+    utterance_handling: bool = False,
     agent_identity: str = DEFAULT_AGENT_IDENTITY,
     api_base: str | None = None,
 ) -> RunCallable:
@@ -102,6 +105,7 @@ def build_attention_runner(
             agent_token=agent_token,
             participant_identity=human_identity,
             attention_config=attention_config,
+            utterance_handling=utterance_handling,
             **({"api_base": api_base} if api_base else {}),
         )
         logger.info(
@@ -123,6 +127,11 @@ def build_attention_runner(
             @engine.on_interjection
             async def _on_interjection(ev: InterjectionEvent) -> None:
                 await on_interjection(ev, transport)
+
+        if on_utterance_ended is not None:
+            @engine.on_utterance_ended
+            async def _on_utterance(ev: UtteranceEndedEvent) -> None:
+                await on_utterance_ended(ev, transport)
 
         @engine.on_turn_ready
         async def _on_turn(ev: TurnReadyEvent) -> None:

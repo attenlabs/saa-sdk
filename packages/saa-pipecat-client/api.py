@@ -91,6 +91,7 @@ async def start_attention_session(
     agent_token: str,
     participant_identity: str,
     attention_config: dict[str, Any] | None = None,
+    utterance_handling: bool = False,
     api_base: str = DEFAULT_API_BASE,
     timeout: float = 30.0,
 ) -> SessionHandle:
@@ -113,6 +114,10 @@ async def start_attention_session(
         attention_config:     Optional config overrides (vetted subset only).
                               See https://attentionlabs.ai/docs/integrations/pipecat
                               for the public field list. Unknown fields are silently ignored.
+        utterance_handling:   Opt into utterance handling: one `UtteranceEndedEvent`
+                              per utterance (transcript + addressee verdict) and an
+                              `UtteranceConfigEvent` after `started`. Off by default;
+                              feed assistant replies back with `add_assistant_turn`.
         api_base:             Override the API base URL (testing / private envs).
         timeout:              HTTP timeout for the POST call.
     """
@@ -125,6 +130,8 @@ async def start_attention_session(
     }
     if attention_config:
         body["attention_config"] = attention_config
+    if utterance_handling:
+        body["utterance_handling"] = True
 
     # Keep the httpx client open for the lifetime of the handle so
     # subsequent .stop() / .status() calls reuse the same connection pool.
