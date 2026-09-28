@@ -1,33 +1,26 @@
-#ifndef BASE64_H
-#define BASE64_H
+#ifndef SAA_BASE64_H
+#define SAA_BASE64_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/**
- * Base64 encode binary data
- * @param data Input binary data
- * @param input_len Length of input data in bytes
- * @param output_len If non-NULL, receives length of encoded string (excluding null terminator)
- * @return Malloc'd null-terminated string, caller must free. NULL on error.
- */
-char *base64_encode(const uint8_t *data, size_t input_len, size_t *output_len);
+/* Standard base64 with padding. Both return malloc'd buffers the caller frees. */
 
-/**
- * Base64 decode string to binary data
- * @param encoded Input base64-encoded string
- * @param input_len Length of encoded string (or 0 to use strlen)
- * @param output_len Receives length of decoded data in bytes
- * @return Malloc'd buffer, caller must free. NULL on error.
- */
-uint8_t *base64_decode(const char *encoded, size_t input_len, size_t *output_len);
+/* NUL-terminated output; *out_len (optional) excludes the terminator. NULL on
+ * allocation failure. */
+char *saa_b64_encode(const uint8_t *data, size_t len, size_t *out_len);
+
+/* Strict: the input length must be a multiple of 4, padding only at the end,
+ * and only alphabet characters. Returns NULL on invalid input or allocation
+ * failure; an empty input yields a 1-byte buffer and *out_len == 0. */
+uint8_t *saa_b64_decode(const char *in, size_t len, size_t *out_len);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* BASE64_H */
+#endif /* SAA_BASE64_H */

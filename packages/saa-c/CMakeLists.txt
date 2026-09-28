@@ -1,5 +1,5 @@
 # saa-c: SAA cloud streaming client for C/C++ devices.
-# M0 state: builds the spike only. The library targets land in M1.
+# Currently builds the protocol spike only; the library targets follow.
 cmake_minimum_required(VERSION 3.16)
 project(saa_c VERSION 0.0.1 LANGUAGES C)
 
@@ -19,7 +19,7 @@ if(APPLE AND NOT OPENSSL_ROOT_DIR AND EXISTS /opt/homebrew/opt/openssl@3)
 endif()
 find_package(OpenSSL)
 
-# Vendored: cJSON 1.7.18 (MIT), base64 (from SD_SAA_C).
+# Vendored: cJSON 1.7.18 (MIT) and a small base64 codec.
 add_library(saa_third_party STATIC
   third_party/cJSON/cJSON.c
   third_party/base64/base64.c)
@@ -28,7 +28,7 @@ target_include_directories(saa_third_party PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/third_party/base64)
 set_source_files_properties(third_party/cJSON/cJSON.c PROPERTIES COMPILE_FLAGS "-w")
 
-# ── M0 spike ──────────────────────────────────────────────────────────────
+# ── protocol spike ────────────────────────────────────────────────────────
 add_executable(m0_stream spike/m0_stream.c)
 target_compile_definitions(m0_stream PRIVATE _POSIX_C_SOURCE=200809L _DARWIN_C_SOURCE)
 target_compile_options(m0_stream PRIVATE -Wall -Wextra)
