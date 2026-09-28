@@ -255,6 +255,14 @@ function onAppMessage({ data, fromId }) {
     case "config":
       console.log("[saa] threshold", data.model_class2_threshold);
       break;
+    case "utterance_ended":
+      // utterance handling (opt-in on the token server): transcript + addressee verdict;
+      console.log(`[saa] utterance #${data.seq} pred=${data.prediction} ${data.decision} preview=${data.preview}:`, data.text);
+      if (data.stream_id) beginAssembly(data, "utterance");
+      break;
+    case "utterance_config":
+      console.log("[saa] utterance handling", data);
+      break;
     case "error":
       console.warn("[saa] error", data.message);
       break;

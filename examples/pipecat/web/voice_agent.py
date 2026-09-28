@@ -29,7 +29,10 @@ from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.frames.frames import (
     Frame,
     InterruptionTaskFrame,
+    LLMFullResponseEndFrame,
+    LLMFullResponseStartFrame,
     LLMMessagesAppendFrame,
+    LLMTextFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
 )
@@ -51,9 +54,16 @@ def _turn_audio_to_24k_b64(pcm16_16k: bytes) -> str:
 
 
 class _BotSpeakingObserver(FrameProcessor):
-    def __init__(self) -> None:
+    """Mirrors the bot into SAA: responding_start/stop on the TTS edges and,
+    with utterance handling on, each finished reply's transcript into the
+    addressee history via add_assistant_turn (the realtime service streams
+    the reply as LLMTextFrames between the full-response markers)."""
+
+    def __init__(self, *, feed_assistant_turns: bool = False) -> None:
         super().__init__()
         self._engine: Optional[AttentionEngine] = None
+        self._feed_assistant_turns = feed_assistant_turns
+        self._reply: list[str] = []
 
     def bind_engine(self, engine: AttentionEngine) -> None:
         self._engine = engine
@@ -65,6 +75,15 @@ class _BotSpeakingObserver(FrameProcessor):
                 asyncio.create_task(self._engine.responding_start())
             elif isinstance(frame, TTSStoppedFrame):
                 asyncio.create_task(self._engine.responding_stop())
+            elif isinstance(frame, LLMFullResponseStartFrame):
+                self._reply = []
+            elif isinstance(frame, LLMTextFrame):
+                self._reply.append(frame.text)
+            elif isinstance(frame, LLMFullResponseEndFrame):
+                text = "".join(self._reply).strip()
+                self._reply = []
+                if text and self._feed_assistant_turns:
+                    asyncio.create_task(self._engine.add_assistant_turn(text))
         await self.push_frame(frame, direction)
 
 
@@ -76,6 +95,7 @@ async def run_voice_agent(
     openai_api_key: str,
     model: str = "gpt-realtime-2",
     system_prompt: str = "You are a helpful voice assistant. Keep replies short and natural.",
+    utterance_handling: bool = False,
 ) -> None:
     transport = DailyTransport(
         room_url,
@@ -107,7 +127,7 @@ async def run_voice_agent(
         ),
     )
 
-    bot_speaking = _BotSpeakingObserver()
+    bot_speaking = _BotSpeakingObserver(feed_assistant_turns=utterance_handling)
 
     pipeline = Pipeline(
         [
@@ -168,6 +188,19 @@ async def run_voice_agent(
     @engine.on_error
     def _(ev) -> None:
         logger.warning("SAA error [%s]: %s", ev.code, ev.message)
+
+    # utterance handling (token_server opens the session with utterance_handling=True):
+    # observed only, turn_ready still drives the model
+    @engine.on_utterance_config
+    def _(cfg) -> None:
+        logger.info("SAA utterance handling %s%s preview=%s threshold=%.2f",
+                    "on" if cfg.enabled else "off", f" ({cfg.reason})" if cfg.reason else "",
+                    cfg.preview, cfg.class1_threshold)
+
+    @engine.on_utterance_ended
+    def _(u) -> None:
+        logger.info("SAA utterance #%d pred=%s decision=%s turns=%d preview=%s %r",
+                    u.seq, u.prediction, u.decision, u.assistant_turns, u.preview, u.text)
 
     @transport.event_handler("on_first_participant_joined")
     async def _on_first_participant_joined(transport_, participant):

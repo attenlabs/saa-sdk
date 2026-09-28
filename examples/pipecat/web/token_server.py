@@ -23,6 +23,9 @@ DAILY_API = "https://api.daily.co/v1"
 
 VOICE_AGENT_PROVIDER_KEYS = ("OPENAI_API_KEY",)
 
+# opt-in utterance handling (preview): one transcript + addressee verdict per utterance
+UTTERANCE_HANDLING = os.environ.get("SAA_UTTERANCE_HANDLING", "").strip().lower() in ("1", "true", "yes")
+
 def _voice_agent_enabled() -> tuple[bool, list[str]]:
     missing = [k for k in VOICE_AGENT_PROVIDER_KEYS if not os.environ.get(k)]
     return (not missing, missing)
@@ -206,6 +209,7 @@ async def _spawn_voice_agent(
                 bot_token=bot_token,
                 saa_agent_identity=saa_agent_identity,
                 openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
+                utterance_handling=UTTERANCE_HANDLING,
             )
         except asyncio.CancelledError:
             raise
@@ -247,6 +251,7 @@ async def session(room: Optional[str] = None) -> dict:
         room_url=room_url,
         agent_token=saa_agent_token,
         participant_identity=human_identity,
+        utterance_handling=UTTERANCE_HANDLING,
     )
 
     enabled, missing = _voice_agent_enabled()
