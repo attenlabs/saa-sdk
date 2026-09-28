@@ -23,7 +23,32 @@ if(CMAKE_CXX_COMPILER)
   add_test(NAME header_check_cxx11 COMMAND header_check_cxx11)
 endif()
 
+# Unit tests: internal modules, no network (the resolver test looks up localhost).
+function(saa_unit_test name)
+  add_executable(${name} unit/${name}.c)
+  target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/unit)
+  target_link_libraries(${name} PRIVATE saaclient Threads::Threads m)
+  target_compile_definitions(${name} PRIVATE _POSIX_C_SOURCE=200809L
+    $<$<PLATFORM_ID:Darwin>:_DARWIN_C_SOURCE>)
+  target_compile_options(${name} PRIVATE ${SAA_WARNINGS})
+  add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+saa_unit_test(test_audio_intake)
+saa_unit_test(test_backoff)
+saa_unit_test(test_protocol)
+saa_unit_test(test_resolver)
+saa_unit_test(test_url)
+saa_unit_test(test_video_intake)
+
 find_package(Python3 COMPONENTS Interpreter)
+
+# The static library exports nothing outside saa-c's namespaces (sanitizer
+# builds add their own globals, so the check is skipped there).
+if(Python3_FOUND AND NOT SAA_SANITIZE)
+  add_test(NAME symbols
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/check_symbols.py $<TARGET_FILE:saaclient>)
+endif()
 
 # Synthetic test audio: generated at test time, never committed.
 if(Python3_FOUND)
@@ -62,4 +87,11 @@ if(SAA_MOCK_TESTS)
   add_test(NAME slice_feed
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_slice.py
             $<TARGET_FILE:slice_feed> 3)
+  if(TARGET saa_client_demo)
+    # the demo against every scripted mock scenario (about 20 s, run in parallel)
+    add_test(NAME conformance
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/conformance.py
+              $<TARGET_FILE:saa_client_demo>)
+    set_tests_properties(conformance PROPERTIES TIMEOUT 120)
+  endif()
 endif()
