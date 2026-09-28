@@ -23,6 +23,9 @@
 #ifndef cJSON__h
 #define cJSON__h
 
+/* saa-c: every public cJSON function gets a saa_ prefix (see gen_prefix.py). */
+#include "saa_cjson_prefix.h"
+
 #ifdef __cplusplus
 extern "C"
 {
