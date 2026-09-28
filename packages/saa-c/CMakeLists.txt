@@ -83,9 +83,12 @@ set_source_files_properties(third_party/cJSON/cJSON.c PROPERTIES COMPILE_FLAGS "
 # The vendored sources are compiled in, so the archive is self-contained.
 set(SAA_CLIENT_SOURCES
   src/audio_intake.c
+  src/backoff.c
   src/client.c
   src/clock.c
   src/log.c
+  src/protocol.c
+  src/resolver.c
   src/transport_lws.c
   src/url.c
   src/video_intake.c
@@ -130,6 +133,16 @@ install(TARGETS ${SAA_INSTALL_TARGETS}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(DIRECTORY include/saa DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/saaclient.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+
+# ── demo ──────────────────────────────────────────────────────────────────
+if(SAA_BUILD_DEMO)
+  add_executable(saa_client_demo examples/demo/main.c)
+  target_link_libraries(saa_client_demo PRIVATE saaclient Threads::Threads m)
+  target_compile_definitions(saa_client_demo PRIVATE _POSIX_C_SOURCE=200809L
+    $<$<PLATFORM_ID:Darwin>:_DARWIN_C_SOURCE>)
+  target_compile_options(saa_client_demo PRIVATE ${SAA_WARNINGS})
+  install(TARGETS saa_client_demo RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 
 # ── protocol spike (local only; not part of the package) ──────────────────
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/spike/m0_stream.c)
