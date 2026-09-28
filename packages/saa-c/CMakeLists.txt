@@ -17,6 +17,7 @@ option(SAA_BUILD_SHARED       "Also build libsaaclient.so"                      
 option(SAA_WITH_CAPTURE       "Build the ALSA + V4L2 capture module"             OFF)
 option(SAA_ALLOW_INSECURE_TLS "Honour insecure_skip_verify (never in releases)"  OFF)
 option(SAA_WERROR             "Treat warnings in saa-c's own sources as errors"  OFF)
+option(SAA_REQUIRE_MOCK_TESTS "Fail the configure if the mock-server tests cannot run" OFF)
 set(SAA_SANITIZE "" CACHE STRING "Sanitizer for saa-c's own code: address, undefined, thread, or empty")
 
 if(SAA_WITH_CAPTURE)
