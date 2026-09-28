@@ -13,6 +13,12 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(LWS REQUIRED IMPORTED_TARGET libwebsockets)
 message(STATUS "libwebsockets ${LWS_VERSION}")
 
+# lws and openssl shenanigans
+if(APPLE AND NOT OPENSSL_ROOT_DIR AND EXISTS /opt/homebrew/opt/openssl@3)
+  set(OPENSSL_ROOT_DIR /opt/homebrew/opt/openssl@3)
+endif()
+find_package(OpenSSL)
+
 # Vendored: cJSON 1.7.18 (MIT), base64 (from SD_SAA_C).
 add_library(saa_third_party STATIC
   third_party/cJSON/cJSON.c
@@ -27,3 +33,6 @@ add_executable(m0_stream spike/m0_stream.c)
 target_compile_definitions(m0_stream PRIVATE _POSIX_C_SOURCE=200809L _DARWIN_C_SOURCE)
 target_compile_options(m0_stream PRIVATE -Wall -Wextra)
 target_link_libraries(m0_stream PRIVATE saa_third_party PkgConfig::LWS m)
+if(OpenSSL_FOUND)
+  target_link_libraries(m0_stream PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+endif()
