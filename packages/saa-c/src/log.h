@@ -14,7 +14,9 @@
 void saac_log(int level, const char *fmt, ...) SAAC_PRINTF(2, 3);
 
 /* Tokens to redact from every log line. Register on create, unregister on
- * destroy. Tokens shorter than 4 characters are not tracked. */
+ * destroy. Tokens shorter than 16 characters are not tracked: redaction replaces
+ * plain substrings, so a short token would mangle ordinary words, and real API
+ * keys are much longer. */
 void saac_log_register_token(const char *token);
 void saac_log_unregister_token(const char *token);
 

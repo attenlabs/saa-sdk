@@ -7,6 +7,7 @@
 #include <string.h>
 
 #define MAX_TOKENS  8
+#define MIN_TOKEN   16          /* shorter strings would redact ordinary words */
 #define LINE_MAX_   1024
 
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
@@ -25,7 +26,7 @@ void saa_client_set_log_fn(void (*fn)(int level, const char *msg, void *ud), voi
 
 void saac_log_register_token(const char *token)
 {
-    if (!token || strlen(token) < 4) return;
+    if (!token || strlen(token) < MIN_TOKEN) return;
     pthread_mutex_lock(&g_mu);
     for (int i = 0; i < MAX_TOKENS; i++)
         if (g_tokens[i] && !strcmp(g_tokens[i], token)) { g_token_refs[i]++; goto out; }
