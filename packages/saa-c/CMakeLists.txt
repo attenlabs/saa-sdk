@@ -1,12 +1,21 @@
 # saa-c: SAA cloud streaming client for C/C++ devices.
-# Currently builds the protocol spike only; the library targets follow.
+# Currently builds the vendored code, the header checks, and (when present) the
+# protocol spike; the library targets follow.
 cmake_minimum_required(VERSION 3.16)
 project(saa_c VERSION 0.0.1 LANGUAGES C)
+
+option(SAA_BUILD_TESTS "Build the tests"                                 ON)
+option(SAA_WERROR      "Treat warnings in saa-c's own sources as errors" OFF)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RelWithDebInfo)
+endif()
+
+set(SAA_WARNINGS -Wall -Wextra)
+if(SAA_WERROR)
+  list(APPEND SAA_WARNINGS -Werror)
 endif()
 
 find_package(PkgConfig REQUIRED)
@@ -28,11 +37,25 @@ target_include_directories(saa_third_party PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/third_party/base64)
 set_source_files_properties(third_party/cJSON/cJSON.c PROPERTIES COMPILE_FLAGS "-w")
 
-# ── protocol spike ────────────────────────────────────────────────────────
-add_executable(m0_stream spike/m0_stream.c)
-target_compile_definitions(m0_stream PRIVATE _POSIX_C_SOURCE=200809L _DARWIN_C_SOURCE)
-target_compile_options(m0_stream PRIVATE -Wall -Wextra)
-target_link_libraries(m0_stream PRIVATE saa_third_party PkgConfig::LWS m)
-if(OpenSSL_FOUND)
-  target_link_libraries(m0_stream PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+# ── protocol spike (local only; not part of the package) ──────────────────
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/spike/m0_stream.c)
+  add_executable(m0_stream spike/m0_stream.c)
+  target_compile_definitions(m0_stream PRIVATE _POSIX_C_SOURCE=200809L _DARWIN_C_SOURCE
+    SAA_BASE64_LEGACY_NAMES)
+  target_compile_options(m0_stream PRIVATE -Wall -Wextra)
+  target_link_libraries(m0_stream PRIVATE saa_third_party PkgConfig::LWS m)
+  if(OpenSSL_FOUND)
+    target_link_libraries(m0_stream PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+  endif()
+endif()
+
+# ── tests ─────────────────────────────────────────────────────────────────
+if(SAA_BUILD_TESTS)
+  include(CheckLanguage)
+  check_language(CXX)
+  if(CMAKE_CXX_COMPILER)
+    enable_language(CXX)
+  endif()
+  enable_testing()
+  add_subdirectory(tests)
 endif()
