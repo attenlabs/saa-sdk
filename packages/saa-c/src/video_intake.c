@@ -4,24 +4,24 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct saa_video_intake {
+struct saac_video_intake {
     pthread_mutex_t mu;
     size_t          headroom;
-    saa_vframe_t    slot;
+    saac_vframe_t   slot;
     int             pending;
     int64_t         put_us;
 };
 
-saa_video_intake_t *saa_vi_create(size_t headroom)
+saac_video_intake_t *saac_vi_create(size_t headroom)
 {
-    saa_video_intake_t *vi = calloc(1, sizeof *vi);
+    saac_video_intake_t *vi = calloc(1, sizeof *vi);
     if (!vi) return NULL;
     if (pthread_mutex_init(&vi->mu, NULL)) { free(vi); return NULL; }
     vi->headroom = headroom;
     return vi;
 }
 
-void saa_vi_destroy(saa_video_intake_t *vi)
+void saac_vi_destroy(saac_video_intake_t *vi)
 {
     if (!vi) return;
     pthread_mutex_destroy(&vi->mu);
@@ -29,7 +29,7 @@ void saa_vi_destroy(saa_video_intake_t *vi)
     free(vi);
 }
 
-int saa_vi_put(saa_video_intake_t *vi, const uint8_t *jpeg, size_t len, int64_t now_us)
+int saac_vi_put(saac_video_intake_t *vi, const uint8_t *jpeg, size_t len, int64_t now_us)
 {
     if (!vi || !jpeg || !len) return -1;
     size_t need = vi->headroom + 1 + len;
@@ -49,8 +49,8 @@ int saa_vi_put(saa_video_intake_t *vi, const uint8_t *jpeg, size_t len, int64_t 
     return replaced;
 }
 
-int saa_vi_take(saa_video_intake_t *vi, saa_vframe_t *f, int64_t now_us, int64_t max_age_us,
-                int *dropped)
+int saac_vi_take(saac_video_intake_t *vi, saac_vframe_t *f, int64_t now_us, int64_t max_age_us,
+                 int *dropped)
 {
     int got = 0;
     pthread_mutex_lock(&vi->mu);
@@ -59,7 +59,7 @@ int saa_vi_take(saa_video_intake_t *vi, saa_vframe_t *f, int64_t now_us, int64_t
         if (max_age_us > 0 && now_us - vi->put_us > max_age_us) {
             if (dropped) (*dropped)++;
         } else {
-            saa_vframe_t t = *f;             /* the caller's old buffer goes back to the slot */
+            saac_vframe_t t = *f;             /* the caller's old buffer goes back to the slot */
             *f = vi->slot;
             vi->slot = t;
             got = 1;
@@ -69,7 +69,7 @@ int saa_vi_take(saa_video_intake_t *vi, saa_vframe_t *f, int64_t now_us, int64_t
     return got;
 }
 
-int saa_vi_clear(saa_video_intake_t *vi)
+int saac_vi_clear(saac_video_intake_t *vi)
 {
     pthread_mutex_lock(&vi->mu);
     int had = vi->pending;
@@ -78,7 +78,7 @@ int saa_vi_clear(saa_video_intake_t *vi)
     return had;
 }
 
-int saa_vi_pending(saa_video_intake_t *vi)
+int saac_vi_pending(saac_video_intake_t *vi)
 {
     pthread_mutex_lock(&vi->mu);
     int p = vi->pending;
@@ -86,7 +86,7 @@ int saa_vi_pending(saa_video_intake_t *vi)
     return p;
 }
 
-size_t saa_vi_pending_bytes(saa_video_intake_t *vi)
+size_t saac_vi_pending_bytes(saac_video_intake_t *vi)
 {
     pthread_mutex_lock(&vi->mu);
     size_t n = vi->pending ? vi->slot.len : 0;
