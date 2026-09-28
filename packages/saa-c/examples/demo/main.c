@@ -1,0 +1,588 @@
+/*
+ * saa_client_demo - stream a WAV (and optionally JPEG stills) to SAA and print
+ * every event as one JSON line.
+ *
+ *   saa_client_demo --wav order.wav --wait-warmup --audio-only --events out.jsonl
+ *
+ * JSON lines: {"ts_ms": <ms since start>, "event": "<callback name without on_>", ...}
+ * with audio and JPEG payloads replaced by sample and byte counts. The last line
+ * is {"event":"summary", ...}.
+ *
+ * Exit codes: 0 clean, 2 auth, 3 rate limited or no capacity, 4 transport gave
+ * up, 5 bad arguments.
+ */
+
+#include "saa/saa_client.h"
+
+#include <dirent.h>
+#include <math.h>
+#include <pthread.h>
+#include <stdarg.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/resource.h>
+#include <time.h>
+
+#define EXIT_OK        0
+#define EXIT_AUTH      2
+#define EXIT_BUSY      3
+#define EXIT_TRANSPORT 4
+#define EXIT_ARGS      5
+
+typedef struct {
+    const char *url, *token, *wav_path, *jpeg_dir, *events_path, *ca_file, *profile;
+    int         fast, wait_warmup, stats, utterance, max_reconnects;
+    double      threshold, duration_s, tail_s;
+} opts_t;
+
+static opts_t   g_o;
+static FILE    *g_out;
+static double   g_t0;
+static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  g_cv = PTHREAD_COND_INITIALIZER;
+static saa_client_t *g_client;
+static int      g_warm, g_turns, g_errors, g_last_kind = -1, g_last_code, g_ended;
+
+/* ── time and JSON output ──────────────────────────────────────────── */
+
+static double now_s(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+static void sleep_until(double t)
+{
+    double d = t - now_s();
+    if (d <= 0) return;
+    struct timespec ts = { (time_t)d, (long)((d - (double)(time_t)d) * 1e9) };
+    nanosleep(&ts, NULL);
+}
+
+static void json_str(FILE *f, const char *s)
+{
+    fputc('"', f);
+    for (; s && *s; s++) {
+        unsigned char c = (unsigned char)*s;
+        if (c == '"' || c == '\\') fprintf(f, "\\%c", c);
+        else if (c < 0x20) fprintf(f, "\\u%04x", c);
+        else fputc(c, f);
+    }
+    fputc('"', f);
+}
+
+/* emit("turn_ready", "i:samples", n, "s:context", ctx, ...) - one JSON line */
+static void emit(const char *event, ...)
+{
+    pthread_mutex_lock(&g_mu);
+    fprintf(g_out, "{\"ts_ms\":%.0f,\"event\":", (now_s() - g_t0) * 1000.0);
+    json_str(g_out, event);
+    va_list ap;
+    va_start(ap, event);
+    const char *key;
+    while ((key = va_arg(ap, const char *)) != NULL) {
+        fprintf(g_out, ",");
+        json_str(g_out, key + 2);
+        fputc(':', g_out);
+        switch (key[0]) {
+        case 'i': fprintf(g_out, "%lld", va_arg(ap, long long)); break;
+        case 'f': {
+            double v = va_arg(ap, double);
+            if (isfinite(v)) fprintf(g_out, "%.6g", v); else fprintf(g_out, "null");
+            break;
+        }
+        case 'b': fprintf(g_out, va_arg(ap, int) ? "true" : "false"); break;
+        case 's': {
+            const char *s = va_arg(ap, const char *);
+            if (s) json_str(g_out, s); else fprintf(g_out, "null");
+            break;
+        }
+        case 'r': fprintf(g_out, "%s", va_arg(ap, const char *)); break;   /* raw JSON */
+        }
+    }
+    va_end(ap);
+    fprintf(g_out, "}\n");
+    fflush(g_out);
+    pthread_mutex_unlock(&g_mu);
+}
+
+#define I(k, v) "i:" k, (long long)(v)
+#define F(k, v) "f:" k, (double)(v)
+#define B(k, v) "b:" k, (int)(v)
+#define S(k, v) "s:" k, (const char *)(v)
+#define R(k, v) "r:" k, (const char *)(v)
+
+static long rss_kb(void)
+{
+#if defined(__linux__)
+    FILE *f = fopen("/proc/self/status", "r");
+    char line[256];
+    long kb = -1;
+    while (f && fgets(line, sizeof line, f))
+        if (!strncmp(line, "VmRSS:", 6)) kb = strtol(line + 6, NULL, 10);
+    if (f) fclose(f);
+    return kb;
+#else
+    struct rusage ru;
+    getrusage(RUSAGE_SELF, &ru);
+    return ru.ru_maxrss / 1024;       /* peak, in bytes on macOS */
+#endif
+}
+
+/* ── callbacks ─────────────────────────────────────────────────────── */
+
+static void on_started(void *ud)
+{
+    (void)ud;
+    char sid[128];
+    saa_client_session_id(g_client, sid, sizeof sid);
+    emit("started", S("session_id", sid), NULL);
+}
+
+static void on_warmup(void *ud)
+{
+    (void)ud;
+    emit("warmup_complete", NULL);
+    pthread_mutex_lock(&g_mu);
+    g_warm = 1;
+    pthread_cond_broadcast(&g_cv);
+    pthread_mutex_unlock(&g_mu);
+}
+
+static void on_prediction(void *ud, const saa_prediction_ev_t *e)
+{
+    (void)ud;
+    emit("prediction", I("cls", e->cls), I("raw_cls", e->raw_cls), F("confidence", e->confidence),
+         S("source", saa_pred_source_name(e->source)), I("num_faces", e->num_faces),
+         B("responding", e->responding), NULL);
+}
+
+static void on_vad(void *ud, const saa_vad_ev_t *e)
+{
+    (void)ud;
+    emit("vad", F("probability", e->probability), B("is_speech", e->is_speech), NULL);
+}
+
+static void on_state(void *ud, const saa_state_ev_t *e)
+{
+    (void)ud;
+    emit("state", S("state", saa_state_name(e->state)), NULL);
+}
+
+static void on_turn_ready(void *ud, const saa_turn_ready_ev_t *e)
+{
+    (void)ud;
+    char frames[512] = "[";
+    size_t o = 1;
+    for (size_t i = 0; i < e->num_frames && o + 32 < sizeof frames; i++)
+        o += (size_t)snprintf(frames + o, sizeof frames - o, "%s{\"ts_offset_s\":%.3f,\"bytes\":%zu}",
+                              i ? "," : "", e->frames[i].ts_offset_s, e->frames[i].jpeg_len);
+    snprintf(frames + o, sizeof frames - o, "]");
+    emit("turn_ready", I("samples", e->num_samples), F("duration_sec", e->duration_sec),
+         R("frames", frames), S("context", e->context),
+         I("server_turn_ready_ts_ms", e->server_turn_ready_ts_ms), NULL);
+    pthread_mutex_lock(&g_mu);
+    g_turns++;
+    pthread_mutex_unlock(&g_mu);
+}
+
+static void on_config(void *ud, const saa_config_ev_t *e)
+{
+    (void)ud;
+    emit("config", F("model_class2_threshold", e->model_class2_threshold), NULL);
+}
+
+static void on_interrupt(void *ud, const saa_interrupt_ev_t *e)
+{
+    (void)ud;
+    emit("interrupt", I("fade_ms", e->fade_ms), F("confidence", e->confidence), NULL);
+}
+
+static void on_interjection(void *ud, const saa_interjection_ev_t *e)
+{
+    (void)ud;
+    emit("interjection", S("reason", e->reason), I("samples", e->num_samples),
+         F("duration_sec", e->duration_sec), NULL);
+}
+
+static void on_error(void *ud, const saa_error_ev_t *e)
+{
+    (void)ud;
+    emit("error", S("kind", saa_error_kind_name(e->kind)), S("title", e->title),
+         S("message", e->message), S("detail", e->detail), I("code", e->code),
+         B("retriable", e->retriable), NULL);
+    pthread_mutex_lock(&g_mu);
+    g_errors++;
+    if (e->kind != SAA_ERR_SERVER) {           /* server messages do not end a session */
+        g_last_kind = (int)e->kind;
+        g_last_code = e->code;
+    }
+    pthread_mutex_unlock(&g_mu);
+}
+
+static void on_connected(void *ud)
+{
+    (void)ud;
+    emit("connected", NULL);
+}
+
+static void on_disconnected(void *ud, const saa_disconnected_ev_t *e)
+{
+    (void)ud;
+    emit("disconnected", I("code", e->code), S("reason", e->reason), B("was_clean", e->was_clean), NULL);
+}
+
+static void on_reconnecting(void *ud, const saa_reconnecting_ev_t *e)
+{
+    (void)ud;
+    emit("reconnecting", I("attempt", e->attempt), I("delay_ms", e->delay_ms),
+         I("last_code", e->last_code), NULL);
+}
+
+static void on_reconnected(void *ud, const saa_reconnected_ev_t *e)
+{
+    (void)ud;
+    emit("reconnected", I("attempts", e->attempts), NULL);
+}
+
+static void on_stats(void *ud, const saa_stats_ev_t *e)
+{
+    (void)ud;
+    emit("stats", F("rtt_ms", e->rtt_ms), I("queued_bytes", e->queued_bytes),
+         I("sent_audio", e->sent_audio), I("skipped_audio", e->skipped_audio),
+         I("sent_video", e->sent_video), I("skipped_video", e->skipped_video),
+         I("uptime_ms", e->uptime_ms), I("reconnects", e->reconnects),
+         I("rss_kb", g_o.stats ? rss_kb() : -1), NULL);
+}
+
+static void on_utterance_ended(void *ud, const saa_utterance_ended_ev_t *e)
+{
+    (void)ud;
+    emit("utterance_ended", I("seq", e->seq), S("text", e->text), I("prediction", e->prediction),
+         F("confidence", e->confidence), B("respond", e->respond), S("reason", e->reason),
+         F("start_s", e->start_s), F("end_s", e->end_s), B("truncated", e->truncated),
+         I("assistant_turns", e->assistant_turns), B("preview", e->preview),
+         I("latency_ms", e->latency_ms), I("samples", e->num_samples), NULL);
+}
+
+static void on_utterance_config(void *ud, const saa_utterance_config_ev_t *e)
+{
+    (void)ud;
+    emit("utterance_config", B("enabled", e->enabled), F("class1_threshold", e->class1_threshold),
+         B("preview", e->preview), S("reason", e->reason), NULL);
+}
+
+/* ── WAV reader: 16/24/32-bit PCM or float32, any rate and channel count ── */
+
+typedef struct {
+    FILE    *f;
+    int      channels, rate, bits, is_float, block;
+    uint32_t data_len, data_pos;
+} wav_t;
+
+static uint32_t rd32(const uint8_t *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((uint32_t)p[3] << 24); }
+static uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
+
+static int wav_open(wav_t *w, const char *path)
+{
+    memset(w, 0, sizeof *w);
+    if (!(w->f = fopen(path, "rb"))) { perror(path); return -1; }
+    uint8_t h[12];
+    if (fread(h, 1, 12, w->f) != 12 || memcmp(h, "RIFF", 4) || memcmp(h + 8, "WAVE", 4)) {
+        fprintf(stderr, "%s: not a RIFF/WAVE file\n", path);
+        return -1;
+    }
+    int have_fmt = 0;
+    for (;;) {
+        uint8_t ch[8];
+        if (fread(ch, 1, 8, w->f) != 8) break;
+        uint32_t sz = rd32(ch + 4);
+        long next = ftell(w->f) + (long)sz + (long)(sz & 1);
+        if (!memcmp(ch, "fmt ", 4)) {
+            uint8_t b[40] = { 0 };
+            size_t n = sz < sizeof b ? sz : sizeof b;
+            if (fread(b, 1, n, w->f) != n) return -1;
+            int fmt = rd16(b);
+            w->channels = rd16(b + 2);
+            w->rate = (int)rd32(b + 4);
+            w->block = rd16(b + 12);
+            w->bits = rd16(b + 14);
+            if (fmt == 0xFFFE && sz >= 26) fmt = rd16(b + 24);
+            w->is_float = fmt == 3;
+            if ((fmt != 1 && fmt != 3) || w->channels < 1 || w->block < 1 || w->block > 64) {
+                fprintf(stderr, "%s: unsupported WAV format\n", path);
+                return -1;
+            }
+            have_fmt = 1;
+        } else if (!memcmp(ch, "data", 4)) {
+            if (!have_fmt) return -1;
+            w->data_len = sz;
+            return 0;
+        }
+        if (fseek(w->f, next, SEEK_SET)) break;
+    }
+    fprintf(stderr, "%s: no data chunk\n", path);
+    return -1;
+}
+
+/* Reads up to n frames as interleaved float32. Returns frames read. */
+static size_t wav_read(wav_t *w, float *out, size_t n)
+{
+    uint8_t buf[64];
+    size_t i = 0;
+    for (; i < n; i++) {
+        if (w->data_len != 0xFFFFFFFFu && w->data_pos + (uint32_t)w->block > w->data_len) break;
+        if (fread(buf, 1, (size_t)w->block, w->f) != (size_t)w->block) break;
+        w->data_pos += (uint32_t)w->block;
+        for (int c = 0; c < w->channels; c++) {
+            const uint8_t *p = buf + c * (w->bits / 8);
+            float v = 0.0f;
+            if (w->bits == 16) v = (int16_t)rd16(p) / 32768.0f;
+            else if (w->bits == 24) v = (int32_t)((uint32_t)p[0] << 8 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 24) / 2147483648.0f;
+            else if (w->bits == 32 && w->is_float) memcpy(&v, p, 4);
+            else if (w->bits == 32) v = (int32_t)rd32(p) / 2147483648.0f;
+            out[i * (size_t)w->channels + (size_t)c] = v;
+        }
+    }
+    return i;
+}
+
+/* ── media threads ─────────────────────────────────────────────────── */
+
+typedef struct {
+    saa_client_t *c;
+    wav_t         wav;
+    int           stop;
+    int           audio_done;
+    int           client_ended;   /* the client gave up: feeds return SAA_CLIENT_ERR_STATE */
+} media_t;
+
+static void *audio_main(void *arg)
+{
+    media_t *m = arg;
+    const size_t block = (size_t)(m->wav.rate / 100);          /* 10 ms */
+    float *buf = calloc(block * (size_t)m->wav.channels, sizeof *buf);
+    double t = now_s();
+    int in_wav = !g_o.wait_warmup;
+    double tail_end = 0;
+    while (buf && !__atomic_load_n(&m->stop, __ATOMIC_ACQUIRE)) {
+        if (!in_wav) {                                          /* silence until warmup */
+            pthread_mutex_lock(&g_mu);
+            in_wav = g_warm;
+            pthread_mutex_unlock(&g_mu);
+            memset(buf, 0, block * (size_t)m->wav.channels * sizeof *buf);
+        } else if (!tail_end) {
+            size_t n = wav_read(&m->wav, buf, block);
+            if (n < block) {
+                memset(buf + n * (size_t)m->wav.channels, 0,
+                       (block - n) * (size_t)m->wav.channels * sizeof *buf);
+                tail_end = now_s() + g_o.tail_s;
+                emit("wav_end", NULL);
+            }
+        } else {
+            memset(buf, 0, block * (size_t)m->wav.channels * sizeof *buf);
+            if (now_s() >= tail_end) break;
+        }
+        if (saa_client_feed_audio_interleaved(m->c, buf, block, m->wav.rate, SAA_AUDIO_F32,
+                                              m->wav.channels, 0) == SAA_CLIENT_ERR_STATE) {
+            __atomic_store_n(&m->client_ended, 1, __ATOMIC_RELEASE);
+            break;
+        }
+        t += 0.01;
+        if (!g_o.fast || !in_wav) sleep_until(t);
+    }
+    free(buf);
+    __atomic_store_n(&m->audio_done, 1, __ATOMIC_RELEASE);
+    pthread_mutex_lock(&g_mu);
+    pthread_cond_broadcast(&g_cv);
+    pthread_mutex_unlock(&g_mu);
+    return NULL;
+}
+
+static int cmp_names(const void *a, const void *b)
+{
+    return strcmp(*(char *const *)a, *(char *const *)b);
+}
+
+static void *video_main(void *arg)
+{
+    media_t *m = arg;
+    DIR *d = opendir(g_o.jpeg_dir);
+    if (!d) { perror(g_o.jpeg_dir); return NULL; }
+    char **names = NULL;
+    size_t count = 0;
+    struct dirent *e;
+    while ((e = readdir(d))) {
+        size_t n = strlen(e->d_name);
+        if (n > 4 && (!strcmp(e->d_name + n - 4, ".jpg") || !strcmp(e->d_name + n - 4, ".JPG"))) {
+            char **nn = realloc(names, (count + 1) * sizeof *names);
+            if (!nn) break;
+            names = nn;
+            names[count++] = strdup(e->d_name);
+        }
+    }
+    closedir(d);
+    qsort(names, count, sizeof *names, cmp_names);
+    double t = now_s();
+    for (size_t i = 0; count && !__atomic_load_n(&m->stop, __ATOMIC_ACQUIRE); i = (i + 1) % count) {
+        char path[4096];
+        snprintf(path, sizeof path, "%s/%s", g_o.jpeg_dir, names[i]);
+        FILE *f = fopen(path, "rb");
+        if (f) {
+            fseek(f, 0, SEEK_END);
+            long len = ftell(f);
+            fseek(f, 0, SEEK_SET);
+            uint8_t *jpeg = len > 0 ? malloc((size_t)len) : NULL;
+            if (jpeg && fread(jpeg, 1, (size_t)len, f) == (size_t)len)
+                saa_client_feed_video(m->c, jpeg, (size_t)len);
+            free(jpeg);
+            fclose(f);
+        }
+        t += 0.25;                                              /* 4 fps */
+        sleep_until(t);
+    }
+    for (size_t i = 0; i < count; i++) free(names[i]);
+    free(names);
+    return NULL;
+}
+
+/* ── main ──────────────────────────────────────────────────────────── */
+
+static void usage(const char *argv0)
+{
+    fprintf(stderr,
+        "usage: %s --wav FILE [options]   (API key from $SAA_API_KEY, or --token)\n"
+        "  --url URL        broker https://... (default %s) or a direct ws(s):// URL\n"
+        "  --wav FILE       audio to stream: any rate, channel count (channel 0 is used),\n"
+        "                   16/24/32-bit PCM or float32; real-time paced\n"
+        "  --fast           stream the WAV as fast as the client accepts it\n"
+        "  --wait-warmup    stream silence until warmup_complete, then the WAV\n"
+        "  --tail S         seconds of silence after the WAV (default 3)\n"
+        "  --jpeg-dir DIR   also send DIR/*.jpg at 4 fps, in name order\n"
+        "  --audio-only     request server_profile=audio_only\n"
+        "  --profile NAME   request a specific server_profile\n"
+        "  --threshold F    class-2 threshold (default 0.7)\n"
+        "  --utterance      enable utterance handling (preview)\n"
+        "  --max-reconnects N  give up after N reconnect attempts (default: never)\n"
+        "  --events FILE    write JSON lines to FILE (default stdout)\n"
+        "  --duration S     stop after S seconds\n"
+        "  --stats          add resident memory to the 10 s stats lines\n"
+        "  --ca FILE        CA bundle for TLS\n"
+        "exit: 0 clean, 2 auth, 3 rate limited or no capacity, 4 transport, 5 arguments\n",
+        argv0, SAA_CLIENT_DEFAULT_URL);
+}
+
+static int parse_args(int argc, char **argv)
+{
+    g_o.url = NULL;
+    g_o.token = getenv("SAA_API_KEY");
+    g_o.threshold = 0.7;
+    g_o.tail_s = 3.0;
+    for (int i = 1; i < argc; i++) {
+        const char *k = argv[i], *v = i + 1 < argc ? argv[i + 1] : NULL;
+#define ARG(name) (!strcmp(k, name) && v && ++i)
+        if      (ARG("--url"))       g_o.url = v;
+        else if (ARG("--token"))     { g_o.token = v; fprintf(stderr, "warning: --token is visible to other users of this machine; prefer $SAA_API_KEY\n"); }
+        else if (ARG("--wav"))       g_o.wav_path = v;
+        else if (ARG("--jpeg-dir"))  g_o.jpeg_dir = v;
+        else if (ARG("--events"))    g_o.events_path = v;
+        else if (ARG("--profile"))   g_o.profile = v;
+        else if (ARG("--threshold")) g_o.threshold = atof(v);
+        else if (ARG("--duration"))  g_o.duration_s = atof(v);
+        else if (ARG("--tail"))      g_o.tail_s = atof(v);
+        else if (ARG("--ca"))        g_o.ca_file = v;
+        else if (ARG("--max-reconnects")) g_o.max_reconnects = atoi(v);
+        else if (!strcmp(k, "--fast"))        g_o.fast = 1;
+        else if (!strcmp(k, "--wait-warmup")) g_o.wait_warmup = 1;
+        else if (!strcmp(k, "--audio-only"))  g_o.profile = "audio_only";
+        else if (!strcmp(k, "--utterance"))   g_o.utterance = 1;
+        else if (!strcmp(k, "--stats"))       g_o.stats = 1;
+        else return -1;
+#undef ARG
+    }
+    if (!g_o.wav_path || !g_o.token || !*g_o.token) return -1;
+    return 0;
+}
+
+static int exit_code_for(int rc)
+{
+    if (rc == SAA_CLIENT_ERR_AUTH) return EXIT_AUTH;
+    if (rc == SAA_CLIENT_ERR_BUSY) return EXIT_BUSY;
+    return EXIT_TRANSPORT;
+}
+
+int main(int argc, char **argv)
+{
+    if (parse_args(argc, argv)) { usage(argv[0]); return EXIT_ARGS; }
+    g_out = stdout;
+    if (g_o.events_path && !(g_out = fopen(g_o.events_path, "w"))) {
+        perror(g_o.events_path);
+        return EXIT_ARGS;
+    }
+    g_t0 = now_s();
+
+    media_t m;
+    memset(&m, 0, sizeof m);
+    if (wav_open(&m.wav, g_o.wav_path)) return EXIT_ARGS;
+
+    saa_client_config_t cfg;
+    memset(&cfg, 0, sizeof cfg);
+    cfg.url = g_o.url;
+    cfg.token = g_o.token;
+    cfg.server_profile = g_o.profile;
+    cfg.initial_threshold = (float)g_o.threshold;
+    cfg.video_mode = g_o.jpeg_dir ? SAA_VIDEO_FEED : SAA_VIDEO_NONE;
+    cfg.utterance_handling = g_o.utterance;
+    cfg.ca_file = g_o.ca_file;
+    cfg.max_reconnect_attempts = g_o.max_reconnects;
+    cfg.callbacks = (saa_callbacks_t){ on_started, on_warmup, on_prediction, on_vad, on_state,
+                                       on_turn_ready, on_config, on_interrupt, on_interjection,
+                                       on_error, NULL };
+    cfg.transport = (saa_transport_callbacks_t){ on_connected, on_disconnected, on_reconnecting,
+                                                 on_reconnected, on_stats, on_utterance_ended,
+                                                 on_utterance_config };
+    saa_client_t *c = saa_client_create(&cfg);
+    if (!c) {
+        fprintf(stderr, "invalid configuration (URL, token, or profile)\n");
+        return EXIT_ARGS;
+    }
+    g_client = m.c = c;
+
+    emit("demo_start", S("version", saa_client_version()), S("wav", g_o.wav_path),
+         I("wav_rate", m.wav.rate), I("wav_channels", m.wav.channels), NULL);
+
+    int rc = saa_client_start_wait(c, 30000);
+    int exit_code = EXIT_OK;
+    if (rc) {
+        exit_code = exit_code_for(rc);
+    } else {
+        pthread_t at, vt;
+        pthread_create(&at, NULL, audio_main, &m);
+        int video = g_o.jpeg_dir != NULL;
+        if (video) pthread_create(&vt, NULL, video_main, &m);
+
+        double end = g_o.duration_s > 0 ? g_t0 + g_o.duration_s : 0;
+        while (!__atomic_load_n(&m.audio_done, __ATOMIC_ACQUIRE) && !(end && now_s() >= end))
+            sleep_until(now_s() + 0.05);
+        __atomic_store_n(&m.stop, 1, __ATOMIC_RELEASE);
+        pthread_join(at, NULL);
+        if (video) pthread_join(vt, NULL);
+        pthread_mutex_lock(&g_mu);
+        g_ended = 1;
+        if (__atomic_load_n(&m.client_ended, __ATOMIC_ACQUIRE)) {       /* the session ended itself */
+            exit_code = g_last_kind == SAA_ERR_AUTH ? EXIT_AUTH
+                      : (g_last_kind == SAA_ERR_RATE_LIMIT || g_last_code == 503 || g_last_code == 1013)
+                            ? EXIT_BUSY : (g_last_kind < 0 ? EXIT_OK : EXIT_TRANSPORT);
+        }
+        pthread_mutex_unlock(&g_mu);
+    }
+    saa_client_stop(c);
+    emit("summary", I("exit_code", exit_code), I("turns", g_turns), I("errors", g_errors), NULL);
+    saa_client_destroy(c);
+    if (m.wav.f) fclose(m.wav.f);
+    if (g_out != stdout) fclose(g_out);
+    return exit_code;
+}
