@@ -148,6 +148,24 @@ transport.input() -> AddresseeGate -> OpenAIRealtimeLLMService -> BotSpeakingObs
 
 Lifecycle: the agent shuts down on `on_participant_left` (when you click Stop in the browser). The SAA session is owned by token_server.py and stays alive until it is reaped on idle (~5 min).
 
+## Utterance handling (preview)
+
+Set `SAA_UTTERANCE_HANDLING=1` and `token_server.py` opens the SAA session with
+`utterance_handling=True`. 
+
+
+
+SAA then delivers one `UtteranceEndedEvent` per utterance (transcript
+plus an addressee verdict) next to `turn_ready`. `voice_agent.py` logs each one, and its
+`_BotSpeakingObserver` collects the reply's `LLMTextFrame`s between the full-response markers
+and feeds the text back with `engine.add_assistant_turn(...)`, which the classifier needs for
+context. 
+
+
+
+The browser overlay logs the `utterance_ended` envelopes and reassembles their audio
+chunks like a turn.
+
 ## Requirements and limitations
 
 - The Daily room must be reachable from the SAA cloud (Daily Cloud rooms are public by default).
