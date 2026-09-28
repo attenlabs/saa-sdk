@@ -132,6 +132,8 @@ int saac_ai_push(saac_audio_intake_t *ai, const void *buf, size_t nframes, int s
         ai->have_prev = 0;
     }
 
+    if (!nframes) return 0;              /* also keeps NULL + offset out of the loops below */
+
     double step = (double)sample_rate / (double)SAAC_AI_RATE;
     int queued = 0;
     if (fmt == SAA_AUDIO_S16) {

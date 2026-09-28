@@ -237,6 +237,11 @@ int saac_tp_http_post(saac_transport_t *t, const saac_endpoint_t *ep, const char
     return 0;
 }
 
+void saac_tp_http_kill(saac_transport_t *t)
+{
+    if (t->http && !t->http_done) lws_set_timeout(t->http, PENDING_TIMEOUT_USER_OK, LWS_TO_KILL_ASYNC);
+}
+
 /* ── WebSocket ─────────────────────────────────────────────────────── */
 
 static void ws_reset_rx(saac_transport_t *t)

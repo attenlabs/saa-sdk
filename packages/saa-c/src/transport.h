@@ -75,6 +75,7 @@ void saac_tp_timer_cancel(saac_transport_t *t, int id);
 
 int  saac_tp_http_post(saac_transport_t *t, const saac_endpoint_t *ep, const char *bearer,
                        const char *body, size_t body_len);
+void saac_tp_http_kill(saac_transport_t *t);     /* on_http_done follows with status 0 */
 
 int  saac_tp_ws_connect(saac_transport_t *t, const saac_endpoint_t *ep, const char *subprotocol);
 void saac_tp_request_write(saac_transport_t *t);
