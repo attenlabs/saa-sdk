@@ -27,6 +27,10 @@ per token, each from 1, so a scenario can fail once and then recover.
   garbage              the happy path, after non-JSON text, unknown types, binary frames, a
                        pong without client_ts, and a config without a value
   bigturn, tls         the turn carries 6,000,000 bytes of PCM
+  longturn             the turn carries 25 s of PCM
+  latency              the happy path; the summary lists when each audio frame arrived,
+                       in seconds of CLOCK_MONOTONIC, the clock a C client on the same
+                       machine reads
   toobig               one 20 MiB text message right after started
   utterance            utterance_config after started and utterance_ended at audio frame
                        50, when the session was allocated with utterance_handling: true
@@ -68,6 +72,7 @@ COUNTS = defaultdict(lambda: {"alloc": 0, "session": 0, "alloc_body": None})
 TURN_JPEGS = [b"\xff\xd8\xff\xe0" + bytes(96) + b"\xff\xd9",   # 102 bytes
               b"\xff\xd8\xff\xdb" + bytes(200) + b"\xff\xd9"]  # 206 bytes
 BIG_TURN_BYTES = 6_000_000
+LONG_TURN_S = 25
 TOOBIG_BYTES = 20 << 20
 DARK_AFTER_S = 2                     # blackhole: before the client's first ping, at 5 s
 DARK_FOR_S = 20                      # past the client's stall (15 s) and its 1 s kill
@@ -93,6 +98,16 @@ def big_turn_json() -> str:
                                     "audio_base64": b64(pcm), "frames": [],
                                     "server_turn_ready_ts_ms": int(time.time() * 1000)})
     return _cache["big"]
+
+
+def long_turn_json() -> str:
+    if "long" not in _cache:
+        n = LONG_TURN_S * 32000
+        pcm = (bytes(range(256)) * (n // 256 + 1))[:n]
+        _cache["long"] = json.dumps({"type": "turn_ready", "duration": float(LONG_TURN_S),
+                                     "audio_base64": b64(pcm), "frames": [],
+                                     "server_turn_ready_ts_ms": int(time.time() * 1000)})
+    return _cache["long"]
 
 
 def toobig_json() -> str:
@@ -213,7 +228,7 @@ async def handler(ws):
     utterance = "utterance_handling=1" in req.path
 
     n_audio = n_video = bad = n_ctl = pings = 0
-    actions, per_s = [], []
+    actions, per_s, arrivals = [], [], []
     pcm = bytearray()
     t0 = time.monotonic()
     turn_sent = False
@@ -244,6 +259,8 @@ async def handler(ws):
             if isinstance(msg, (bytes, bytearray)):
                 tag = msg[0] if msg else -1
                 if tag == 0x01:
+                    if scenario == "latency":
+                        arrivals.append(time.clock_gettime(time.CLOCK_MONOTONIC))
                     n_audio += 1
                     sec = int(time.monotonic() - t0)
                     per_s.extend([0] * (sec + 1 - len(per_s)))
@@ -272,6 +289,8 @@ async def handler(ws):
                         await j({"type": "state", "state": "sending"})
                         if scenario in ("bigturn", "tls"):
                             await ws.send(big_turn_json())
+                        elif scenario == "longturn":
+                            await ws.send(long_turn_json())
                         else:
                             turn = bytes(pcm[-20 * 3200:])
                             await j({"type": "turn_ready", "duration": len(turn) / 32000.0,
@@ -323,6 +342,7 @@ async def handler(ws):
         log(f"[ws] summary {scenario!r} session {session}: audio={n_audio} ({rate:.2f}/s over {dt:.1f}s) "
             f"video={n_video} ctl={n_ctl} bad={bad} close_code={ws.close_code} close_reason={ws.close_reason!r}")
         if SUMMARY:
+            extra = {"audio_arrivals": arrivals} if scenario == "latency" else {}
             with open(SUMMARY, "a") as f:
                 f.write(json.dumps({"scenario": scenario, "session": session, "tls": is_tls, "path": req.path,
                                     "audio_frames": n_audio, "bad_frames": bad, "video_frames": n_video,
@@ -330,7 +350,7 @@ async def handler(ws):
                                     "audio_per_s": per_s, "seconds": round(dt, 3), "audio_rate": round(rate, 2),
                                     "close_code": ws.close_code, "close_reason": ws.close_reason,
                                     "user_agent": req.headers.get("User-Agent", ""),
-                                    "allocate_body": alloc_body}) + "\n")
+                                    "allocate_body": alloc_body, **extra}) + "\n")
 
 
 def proxy(name, port, upstream, rate=None, dark_after=None):

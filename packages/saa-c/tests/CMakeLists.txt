@@ -93,6 +93,13 @@ target_compile_definitions(client_harness PRIVATE _POSIX_C_SOURCE=200809L
   $<$<PLATFORM_ID:Darwin>:_DARWIN_C_SOURCE>)
 target_compile_options(client_harness PRIVATE ${SAA_WARNINGS})
 
+# CPU and feed-to-wire latency, for device_report.py (timing: not a CTest).
+add_executable(feed_bench integration/feed_bench.c)
+target_link_libraries(feed_bench PRIVATE saaclient Threads::Threads m)
+target_compile_definitions(feed_bench PRIVATE _POSIX_C_SOURCE=200809L
+  $<$<PLATFORM_ID:Darwin>:_DARWIN_C_SOURCE>)
+target_compile_options(feed_bench PRIVATE ${SAA_WARNINGS})
+
 if(SAA_MOCK_TESTS)
   add_test(NAME slice_feed
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_slice.py

@@ -2,7 +2,7 @@
 """Runs saa_client_demo against the mock server, one scenario per API key, and
 checks the demo's JSON lines, its exit code, and what the mock received.
 
-usage: conformance.py DEMO_BINARY [--only NAME,...] [--keep DIR] [--require-tls]
+usage: conformance.py DEMO_BINARY [--only NAME,...] [--jobs N] [--keep DIR] [--require-tls]
 
 The TLS scenarios need the openssl command to make a throwaway CA; without it
 they are skipped, unless --require-tls is given.
@@ -453,6 +453,11 @@ def make_jpegs(d, count=4, size=20_000):
     return d
 
 
+def expected_seconds(name):
+    extra = SCENARIOS[name][2]
+    return float(extra[extra.index("--duration") + 1]) if "--duration" in extra else 10.0
+
+
 def run_scenario(name, demo, urls, wav, tmp, fill):
     key, via, extra, _ = SCENARIOS[name]
     out = os.path.join(tmp, f"{name}.jsonl")
@@ -508,6 +513,8 @@ def main():
     ap.add_argument("--only", help="comma-separated scenario names")
     ap.add_argument("--keep", help="copy the JSON lines, stderr, and mock logs here")
     ap.add_argument("--require-tls", action="store_true", help="fail, not skip, without openssl")
+    ap.add_argument("--jobs", type=int, default=0,
+                    help="demos at once (default: every scenario; small boards may need 4 to 8)")
     args = ap.parse_args()
     names = args.only.split(",") if args.only else list(SCENARIOS)
     unknown = [n for n in names if n not in SCENARIOS]
@@ -558,9 +565,12 @@ def main():
             print("mock server did not start")
             return 1
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(names)) as pool:
-            futs = [pool.submit(run_scenario, n, args.demo, urls, wav, tmp, fill) for n in names]
-            runs = [f.result() for f in futs]
+        # the longest first, so that a limited pool still ends close to the longest scenario
+        order = sorted(names, key=expected_seconds, reverse=True)
+        jobs = args.jobs if args.jobs > 0 else len(order)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+            futs = {n: pool.submit(run_scenario, n, args.demo, urls, wav, tmp, fill) for n in order}
+            runs = [futs[n].result() for n in names]
         settle(summaries)
         rows = read_summaries(summaries)
         for r in runs:
