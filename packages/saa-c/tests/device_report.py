@@ -15,7 +15,9 @@ What it measures:
   - CPU: user + system time while streaming in real time from memory
     (feed_bench, so no file reading is counted), as a percentage of one core:
     audio only, 48 kHz stereo in 10 ms blocks so the resampler runs, then with
-    30 KB JPEGs at 4 fps, the size of 640x480 frames;
+    30 KB JPEGs at 4 fps, the size of 640x480 frames. The same loop on an open
+    connection without feeding is measured too, and subtracted to give the
+    library's own share;
   - memory: resident memory while streaming audio, and while the demo holds a
     decoded 25 s turn received over TLS. On Linux it reads /proc/PID/smaps, to
     give the figure without the pages of the TLS libraries;
@@ -337,6 +339,12 @@ def markdown(rep):
         if mt.get("turn_rss_kb") is not None and mt["turn_rss_kb"] >= 0:
             rss_turn = mt["turn_rss_kb"] - (mt.get("tls_lib_kb") or 0)
         fs, fc = lat.get("first_sample") or {}, lat.get("frame_complete") or {}
+        idle_pct = (f.get("cpu_idle") or {}).get("cpu_pct")
+
+        def share(r):                              # the library's own part: minus the loop alone
+            if r.get("cpu_pct") is None or idle_pct is None:
+                return r.get("cpu_pct")
+            return round(max(0.0, r["cpu_pct"] - idle_pct), 2)
         lines += [
             "## Footprint", "",
             "| Metric | Target | Measured | |", "|---|---|---|---|",
@@ -350,17 +358,20 @@ def markdown(rep):
             f"{kb(rss_turn)} (anonymous {kb(mt.get('turn_anon_kb'))}, peak {kb(mt.get('peak_rss_kb'))}) | "
             f"{verdict(rss_turn, TARGETS['rss_kb']) if linux else 'n/a'} |",
             f"| CPU, audio only (48 kHz stereo in 10 ms blocks) | ≤ 2 % of one core (Cortex-A53) | "
-            f"{f['cpu_audio']['cpu_pct']} % | {verdict(f['cpu_audio']['cpu_pct'], TARGETS['cpu_audio_pct'])} |",
+            f"{share(f['cpu_audio'])} % ({f['cpu_audio']['cpu_pct']} % with the loop) | "
+            f"{verdict(share(f['cpu_audio']), TARGETS['cpu_audio_pct'])} |",
             f"| CPU, audio + 30 KB JPEGs at 4 fps | ≤ 5 % of one core (Cortex-A53) | "
-            f"{f['cpu_video']['cpu_pct']} % | {verdict(f['cpu_video']['cpu_pct'], TARGETS['cpu_video_pct'])} |",
+            f"{share(f['cpu_video'])} % ({f['cpu_video']['cpu_pct']} % with the loop) | "
+            f"{verdict(share(f['cpu_video']), TARGETS['cpu_video_pct'])} |",
             f"| Latency, feed call to frame received (frame's first sample) | ≤ 110 ms | "
             f"p50 {fs.get('p50_ms')}, p99 {fs.get('p99_ms')}, max {fs.get('max_ms')} ms | "
             f"{verdict(fs.get('p99_ms'), TARGETS['latency_ms'])} |",
             f"| Latency added by the client (frame complete to received) | | "
             f"p50 {fc.get('p50_ms')}, p99 {fc.get('p99_ms')}, max {fc.get('max_ms')} ms | |",
             "",
-            f"CPU is the whole process over {f['cpu_audio']['wall_s']:.0f} s of real-time streaming from memory, "
-            "its feeding loop included; the latency runs over "
+            f"CPU is over {f['cpu_audio']['wall_s']:.0f} s of real-time streaming from memory: the library's share, "
+            f"then the whole process, whose feeding loop alone takes {idle_pct} % on an open connection. The latency "
+            "runs over "
             f"{lat.get('frames_received')} frames. The CPU targets are for a Cortex-A53 and the size target for arm64; "
             "elsewhere they are for comparison. The 25 s turn is held by the demo"
             f"{', over TLS' if f.get('turn_tls') else ''}.",
@@ -438,6 +449,8 @@ def main():
             return 1
         broker, direct = f"http://127.0.0.1:{http}", f"ws://127.0.0.1:{ws}/ws"
 
+        print(f"measuring the feeding loop alone ({cpu_s // 2} s) ...", flush=True)
+        idle = bench(feeder, direct, cpu_s // 2, ["--idle"], tmp, "cpu-idle")
         print(f"measuring CPU and memory, audio only ({cpu_s} s) ...", flush=True)
         a = bench(feeder, direct, cpu_s, ["--stereo48"], tmp, "cpu-audio")
         print(f"measuring CPU, audio and video ({cpu_s} s) ...", flush=True)
@@ -462,7 +475,7 @@ def main():
             keep = {k: r.get(k) for k in ("exit", "cpu_s", "wall_s", "cpu_pct", "blocks", "errors")}
             return keep | ({"stderr": r.get("stderr")} if r.get("exit") else {})
         foot.update({
-            "cpu_audio": cpu(a), "cpu_video": cpu(v),
+            "cpu_idle": cpu(idle), "cpu_audio": cpu(a), "cpu_video": cpu(v),
             "mem_audio": memory_of(a), "mem_turn": memory_of(tr), "turn_tls": bool(certs),
             "turn_samples": ((of(tr["events"], "turn_ready") or [{}])[0]).get("samples"),
             "turn_exit": tr["exit"],

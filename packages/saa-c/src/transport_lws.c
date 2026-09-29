@@ -494,6 +494,8 @@ int saac_tp_run(saac_transport_t *t)
     info.user = t;
     info.client_ssl_ca_filepath = t->ca_file;
     info.timeout_secs = 20;                 /* backstop; the core's deadlines are shorter */
+    /* A few client sockets at most, nonzero limit makes it search a small table instead, for any fd number. */
+    info.fd_limit_per_thread = 16;
 
     t->quit = 0;
     t->quiet = 0;
