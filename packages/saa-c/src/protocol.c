@@ -307,9 +307,12 @@ saac_msg_type_t saac_proto_decode(const char *json, size_t len, saac_msg_t *m)
     case SAAC_MSG_TURN_READY:
         decode_turn(o, m);
         break;
-    case SAAC_MSG_CONFIG:
-        m->config.model_class2_threshold = saac_clamp01((float)num(o, "model_class2_threshold", 0.0));
+    case SAAC_MSG_CONFIG: {
+        const cJSON *v = item(o, "model_class2_threshold");
+        m->config_valid = cJSON_IsNumber(v);          /* the SDKs ignore one without a value */
+        if (m->config_valid) m->config.model_class2_threshold = saac_clamp01((float)v->valuedouble);
         break;
+    }
     case SAAC_MSG_INTERRUPT:
         m->interrupt.fade_ms = (int)num(o, "fade_ms", 500.0);
         m->interrupt.confidence = (float)num(o, "confidence", 0.85);

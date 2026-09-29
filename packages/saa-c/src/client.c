@@ -253,7 +253,7 @@ static void finish(saa_client_t *c)
 static void fail_terminal(saa_client_t *c, saa_error_kind_t kind, const char *title,
                           const char *message, const char *detail, int code, int retriable)
 {
-    saac_store_release(&c->active, 0);   /* ended before the host hears of it (4.8) */
+    saac_store_release(&c->active, 0);   /* ended before the host hears of it */
     emit_error(c, kind, title, message, detail, code, retriable);
     set_start_result(c, rc_for(kind, code));
     finish(c);
@@ -474,6 +474,7 @@ static void dispatch(saa_client_t *c, saac_msg_t *m)
         if (c->cb.on_turn_ready) c->cb.on_turn_ready(ud, &m->turn);
         break;
     case SAAC_MSG_CONFIG:
+        if (!m->config_valid) break;          /* would otherwise reset the threshold to 0 */
         pthread_mutex_lock(&c->mu);
         c->threshold = m->config.model_class2_threshold;
         pthread_mutex_unlock(&c->mu);
@@ -642,6 +643,7 @@ static void ev_ws_open(void *core)
     c->open_ms = c->last_pong_ms = saac_clock_ms();
     c->rtt_ms = -1.0f;
     c->stall_fired = c->warm_sent = c->drop_warned = 0;
+    c->adrop_seen = saac_ai_dropped_total(c->ai);   /* drops while closed are expected */
     c->sent_audio = c->sent_video = 0;
     saac_store_release(&c->conv_state, (int)SAA_STATE_IDLE);   /* reset without emitting */
     set_open(c, 1);
@@ -770,7 +772,7 @@ static void ev_ws_closed(void *core, int code, const char *reason)
     char msg[160];
     snprintf(msg, sizeof msg, "connection closed: %d%s%s", code, reason && *reason ? " " : "",
              reason ? reason : "");
-    fail_terminal(c, f.kind, f.title, msg, NULL, code, 0);
+    fail_terminal(c, f.kind, f.title, msg, reason, code, 0);   /* 1008's reason says why */
 }
 
 static void *service_main(void *arg)

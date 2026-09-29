@@ -54,6 +54,7 @@ typedef struct {
     int                       state_valid;            /* state: 0 for an unknown value */
     saa_state_ev_t            state;
     saa_turn_ready_ev_t       turn;
+    int                       config_valid;           /* config: 0 without a numeric threshold */
     saa_config_ev_t           config;
     saa_interrupt_ev_t        interrupt;
     saa_interjection_ev_t     interjection;

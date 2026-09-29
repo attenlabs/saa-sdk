@@ -468,7 +468,7 @@ saac_transport_t *saac_tp_create(const saac_transport_events_t *ev, void *core,
         t->timers[i].t = t;
         t->timers[i].id = i;
     }
-    /* process-wide (3.4): lws output goes through the client log, never at header level */
+    /* process-wide: lws output goes through the client log, never at header level */
     lws_set_log_level(LLL_ERR | LLL_WARN, lws_emit);
     return t;
 }
