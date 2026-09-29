@@ -85,15 +85,32 @@ target_link_libraries(slice_feed PRIVATE saaclient Threads::Threads m)
 target_compile_definitions(slice_feed PRIVATE _POSIX_C_SOURCE=200809L
   $<$<PLATFORM_ID:Darwin>:_DARWIN_C_SOURCE>)
 target_compile_options(slice_feed PRIVATE ${SAA_WARNINGS})
+# Resync, calls made while closed, callback order, and stop(), against the mock.
+add_executable(client_harness integration/client_harness.c)
+target_include_directories(client_harness PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/unit)
+target_link_libraries(client_harness PRIVATE saaclient Threads::Threads m)
+target_compile_definitions(client_harness PRIVATE _POSIX_C_SOURCE=200809L
+  $<$<PLATFORM_ID:Darwin>:_DARWIN_C_SOURCE>)
+target_compile_options(client_harness PRIVATE ${SAA_WARNINGS})
+
 if(SAA_MOCK_TESTS)
   add_test(NAME slice_feed
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_slice.py
             $<TARGET_FILE:slice_feed> 3)
+  add_test(NAME client_harness
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_harness.py
+            $<TARGET_FILE:client_harness>)
+  set_tests_properties(client_harness PROPERTIES TIMEOUT 90)
   if(TARGET saa_client_demo)
-    # the demo against every scripted mock scenario (about 20 s, run in parallel)
+    # the demo against every scripted mock scenario (about 35 s, run in parallel);
+    # the TLS scenarios need the openssl command, which CI must have
+    set(_saa_conf_args)
+    if(SAA_REQUIRE_MOCK_TESTS)
+      list(APPEND _saa_conf_args --require-tls)
+    endif()
     add_test(NAME conformance
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/conformance.py
-              $<TARGET_FILE:saa_client_demo>)
-    set_tests_properties(conformance PROPERTIES TIMEOUT 120)
+              $<TARGET_FILE:saa_client_demo> ${_saa_conf_args})
+    set_tests_properties(conformance PROPERTIES TIMEOUT 150)
   endif()
 endif()

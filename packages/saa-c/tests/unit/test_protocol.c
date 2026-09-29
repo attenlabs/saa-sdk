@@ -87,7 +87,21 @@ static void test_decode_basic(void)
     saac_msg_clear(&m);
 
     DECODE("{\"type\":\"config\",\"model_class2_threshold\":1.2}");
+    CHECK_INT(m.config_valid, 1);
     CHECK(m.config.model_class2_threshold == 1.0f);
+    saac_msg_clear(&m);
+    DECODE("{\"type\":\"config\",\"model_class2_threshold\":-0.5}");
+    CHECK_INT(m.config_valid, 1);
+    CHECK(m.config.model_class2_threshold == 0.0f);
+    saac_msg_clear(&m);
+
+    /* no numeric value: ignored, so the local threshold is not reset to 0 */
+    DECODE("{\"type\":\"config\"}");
+    CHECK_INT(m.type, SAAC_MSG_CONFIG);
+    CHECK_INT(m.config_valid, 0);
+    saac_msg_clear(&m);
+    DECODE("{\"type\":\"config\",\"model_class2_threshold\":\"0.4\"}");
+    CHECK_INT(m.config_valid, 0);
     saac_msg_clear(&m);
 
     DECODE("{\"type\":\"interrupt\"}");
