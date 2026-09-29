@@ -43,10 +43,11 @@ include(GNUInstallDirs)
 include(CheckCSourceCompiles)
 find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(LWS REQUIRED IMPORTED_TARGET libwebsockets)
-message(STATUS "libwebsockets ${LWS_VERSION}")
+# our own prefix so no touching consumer variables
+pkg_check_modules(SAAC_LWS REQUIRED IMPORTED_TARGET libwebsockets)
+message(STATUS "libwebsockets ${SAAC_LWS_VERSION}")
 
-# lws and openssl shenanigans
+# only need headers
 if(APPLE AND NOT OPENSSL_ROOT_DIR AND EXISTS /opt/homebrew/opt/openssl@3)
   set(OPENSSL_ROOT_DIR /opt/homebrew/opt/openssl@3)
 endif()
@@ -107,9 +108,9 @@ function(saa_client_target name type)
     _POSIX_C_SOURCE=200809L $<$<PLATFORM_ID:Darwin>:_DARWIN_C_SOURCE>
     $<$<BOOL:${SAA_ALLOW_INSECURE_TLS}>:SAA_ALLOW_INSECURE_TLS>)
   target_compile_options(${name} PRIVATE ${SAA_WARNINGS})
-  target_link_libraries(${name} PRIVATE PkgConfig::LWS Threads::Threads m ${SAA_ATOMIC_LIB})
+  target_link_libraries(${name} PRIVATE PkgConfig::SAAC_LWS Threads::Threads m ${SAA_ATOMIC_LIB})
   if(OpenSSL_FOUND)
-    target_link_libraries(${name} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    target_include_directories(${name} PRIVATE ${OPENSSL_INCLUDE_DIR})
   endif()
   set_target_properties(${name} PROPERTIES
     OUTPUT_NAME saaclient
@@ -124,15 +125,48 @@ set(SAA_INSTALL_TARGETS saaclient)
 if(SAA_BUILD_SHARED)
   saa_client_target(saaclient_shared SHARED)
   target_compile_definitions(saaclient_shared PUBLIC SAA_CLIENT_SHARED)
+  set_target_properties(saaclient_shared PROPERTIES EXPORT_NAME saaclient_shared)
   list(APPEND SAA_INSTALL_TARGETS saaclient_shared)
 endif()
 
+# pkg-config. A static-only install must hand its dependencies to every consumer,
+# so `pkg-config --libs saaclient` links; the shared library carries its own.
+set(_saa_deps "-lpthread -lm")
+if(SAA_ATOMIC_LIB)
+  string(APPEND _saa_deps " -latomic")
+endif()
+if(SAA_BUILD_SHARED)
+  set(SAA_PC_REQUIRES "Requires.private: libwebsockets")
+  set(SAA_PC_LIBS "")
+  set(SAA_PC_LIBS_PRIVATE "Libs.private: ${_saa_deps}")
+else()
+  set(SAA_PC_REQUIRES "Requires: libwebsockets")
+  set(SAA_PC_LIBS "${_saa_deps}")
+  set(SAA_PC_LIBS_PRIVATE "")
+endif()
+# The prefix is found from the .pc file's own location, so an install to any
+# prefix (cmake --install --prefix, an unpacked tarball) stays correct.
+file(RELATIVE_PATH SAA_PC_TO_PREFIX "${CMAKE_INSTALL_FULL_LIBDIR}/pkgconfig" "${CMAKE_INSTALL_PREFIX}")
+string(REGEX REPLACE "/$" "" SAA_PC_TO_PREFIX "${SAA_PC_TO_PREFIX}")
 configure_file(saaclient.pc.in ${CMAKE_CURRENT_BINARY_DIR}/saaclient.pc @ONLY)
-install(TARGETS ${SAA_INSTALL_TARGETS}
+install(TARGETS ${SAA_INSTALL_TARGETS} EXPORT saaclientTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY include/saa DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/saaclient.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+
+# CMake package: find_package(saaclient) gives saaclient::saaclient.
+include(CMakePackageConfigHelpers)
+set(SAA_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/saaclient)
+install(EXPORT saaclientTargets NAMESPACE saaclient:: DESTINATION ${SAA_CMAKE_DIR})
+configure_package_config_file(cmake/saaclientConfig.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/saaclientConfig.cmake INSTALL_DESTINATION ${SAA_CMAKE_DIR})
+write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/saaclientConfigVersion.cmake
+  VERSION ${PROJECT_VERSION} COMPATIBILITY SameMinorVersion)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/saaclientConfig.cmake
+              ${CMAKE_CURRENT_BINARY_DIR}/saaclientConfigVersion.cmake
+        DESTINATION ${SAA_CMAKE_DIR})
 
 # ── demo ──────────────────────────────────────────────────────────────────
 if(SAA_BUILD_DEMO)
@@ -142,6 +176,19 @@ if(SAA_BUILD_DEMO)
     $<$<PLATFORM_ID:Darwin>:_DARWIN_C_SOURCE>)
   target_compile_options(saa_client_demo PRIVATE ${SAA_WARNINGS})
   install(TARGETS saa_client_demo RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+  # the sample recording, once committed (tests/data/README.md)
+  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/examples/demo/sample_drive_thru.wav)
+    install(FILES examples/demo/sample_drive_thru.wav DESTINATION ${CMAKE_INSTALL_DATADIR}/saa-c)
+  endif()
+endif()
+
+# The minimal integration, built here too so it never goes stale (not installed).
+if(SAA_BUILD_DEMO)
+  add_executable(saa_minimal examples/minimal/main.c)
+  target_link_libraries(saa_minimal PRIVATE saaclient)
+  target_compile_definitions(saa_minimal PRIVATE _POSIX_C_SOURCE=200809L
+    $<$<PLATFORM_ID:Darwin>:_DARWIN_C_SOURCE>)
+  target_compile_options(saa_minimal PRIVATE ${SAA_WARNINGS})
 endif()
 
 # ── protocol spike (local only; not part of the package) ──────────────────
@@ -150,7 +197,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/spike/m0_stream.c)
   target_compile_definitions(m0_stream PRIVATE _POSIX_C_SOURCE=200809L _DARWIN_C_SOURCE
     SAA_BASE64_LEGACY_NAMES)
   target_compile_options(m0_stream PRIVATE -Wall -Wextra)
-  target_link_libraries(m0_stream PRIVATE saa_third_party PkgConfig::LWS m)
+  target_link_libraries(m0_stream PRIVATE saa_third_party PkgConfig::SAAC_LWS m)
   if(OpenSSL_FOUND)
     target_link_libraries(m0_stream PRIVATE OpenSSL::SSL OpenSSL::Crypto)
   endif()

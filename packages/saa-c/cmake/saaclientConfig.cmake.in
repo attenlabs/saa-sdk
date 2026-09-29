@@ -1,0 +1,18 @@
+# find_package(saaclient) for an installed saa-c. Provides saaclient::saaclient
+# (the static library) and, when it was built, saaclient::saaclient_shared.
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+find_dependency(PkgConfig)
+if(NOT TARGET PkgConfig::SAAC_LWS)
+  pkg_check_modules(SAAC_LWS QUIET IMPORTED_TARGET libwebsockets)
+  if(NOT SAAC_LWS_FOUND)
+    set(saaclient_FOUND FALSE)
+    set(saaclient_NOT_FOUND_MESSAGE "saaclient needs libwebsockets, and pkg-config could not find it")
+    return()
+  endif()
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/saaclientTargets.cmake")
+check_required_components(saaclient)
