@@ -36,6 +36,8 @@ endfunction()
 
 saa_unit_test(test_audio_intake)
 saa_unit_test(test_backoff)
+saa_unit_test(test_callback_guard)
+saa_unit_test(test_log)
 saa_unit_test(test_protocol)
 saa_unit_test(test_resolver)
 saa_unit_test(test_url)
