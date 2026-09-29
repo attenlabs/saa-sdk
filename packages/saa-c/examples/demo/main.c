@@ -115,20 +115,22 @@ static void emit(const char *event, ...)
 #define S(k, v) "s:" k, (const char *)(v)
 #define R(k, v) "r:" k, (const char *)(v)
 
-static long rss_kb(void)
+static long mem_kb(const char *field)
 {
 #if defined(__linux__)
     FILE *f = fopen("/proc/self/status", "r");
     char line[256];
+    size_t n = strlen(field);
     long kb = -1;
     while (f && fgets(line, sizeof line, f))
-        if (!strncmp(line, "VmRSS:", 6)) kb = strtol(line + 6, NULL, 10);
+        if (!strncmp(line, field, n) && line[n] == ':') kb = strtol(line + n + 1, NULL, 10);
     if (f) fclose(f);
     return kb;
 #else
+    if (strcmp(field, "VmHWM") && strcmp(field, "VmRSS")) return -1;
     struct rusage ru;
     getrusage(RUSAGE_SELF, &ru);
-    return ru.ru_maxrss / 1024;       /* peak, in bytes on macOS */
+    return ru.ru_maxrss / 1024;       /* the peak, in bytes on macOS */
 #endif
 }
 
@@ -181,9 +183,12 @@ static void on_turn_ready(void *ud, const saa_turn_ready_ev_t *e)
         o += (size_t)snprintf(frames + o, sizeof frames - o, "%s{\"ts_offset_s\":%.3f,\"bytes\":%zu}",
                               i ? "," : "", e->frames[i].ts_offset_s, e->frames[i].jpeg_len);
     snprintf(frames + o, sizeof frames - o, "]");
+    /* with --stats, memory is sampled here, while the decoded turn is still held */
     emit("turn_ready", I("samples", e->num_samples), F("duration_sec", e->duration_sec),
          R("frames", frames), S("context", e->context),
-         I("server_turn_ready_ts_ms", e->server_turn_ready_ts_ms), NULL);
+         I("server_turn_ready_ts_ms", e->server_turn_ready_ts_ms),
+         I("rss_kb", g_o.stats ? mem_kb("VmRSS") : -1),
+         I("rss_anon_kb", g_o.stats ? mem_kb("RssAnon") : -1), NULL);
     pthread_mutex_lock(&g_mu);
     g_turns++;
     pthread_mutex_unlock(&g_mu);
@@ -255,7 +260,8 @@ static void on_stats(void *ud, const saa_stats_ev_t *e)
          I("sent_audio", e->sent_audio), I("skipped_audio", e->skipped_audio),
          I("sent_video", e->sent_video), I("skipped_video", e->skipped_video),
          I("uptime_ms", e->uptime_ms), I("reconnects", e->reconnects),
-         I("rss_kb", g_o.stats ? rss_kb() : -1), NULL);
+         I("rss_kb", g_o.stats ? mem_kb("VmRSS") : -1),
+         I("rss_anon_kb", g_o.stats ? mem_kb("RssAnon") : -1), NULL);
 }
 
 static void on_utterance_ended(void *ud, const saa_utterance_ended_ev_t *e)
@@ -469,7 +475,8 @@ static void usage(const char *argv0)
         "  --max-reconnects N  give up after N reconnect attempts (default: never)\n"
         "  --events FILE    write JSON lines to FILE (default stdout)\n"
         "  --duration S     stop after S seconds\n"
-        "  --stats          add resident memory to the 10 s stats lines\n"
+        "  --stats          add resident memory to the stats and turn_ready lines,\n"
+        "                   and its peak to the summary\n"
         "  --ca FILE        CA bundle for TLS\n"
         "exit: 0 clean, 2 auth, 3 rate limited or no capacity, 4 transport, 5 arguments\n",
         argv0, SAA_CLIENT_DEFAULT_URL);
@@ -580,7 +587,8 @@ int main(int argc, char **argv)
         pthread_mutex_unlock(&g_mu);
     }
     saa_client_stop(c);
-    emit("summary", I("exit_code", exit_code), I("turns", g_turns), I("errors", g_errors), NULL);
+    emit("summary", I("exit_code", exit_code), I("turns", g_turns), I("errors", g_errors),
+         I("peak_rss_kb", g_o.stats ? mem_kb("VmHWM") : -1), NULL);
     saa_client_destroy(c);
     if (m.wav.f) fclose(m.wav.f);
     if (g_out != stdout) fclose(g_out);
