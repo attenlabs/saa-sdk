@@ -49,7 +49,14 @@ find_package(Python3 COMPONENTS Interpreter)
 # builds add their own globals, so the check is skipped there).
 if(Python3_FOUND AND NOT SAA_SANITIZE)
   add_test(NAME symbols
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/check_symbols.py $<TARGET_FILE:saaclient>)
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/check_symbols.py $<TARGET_FILE:saaclient> "${CMAKE_NM}")
+endif()
+
+# The sample recording meets its spec (tests/data/README.md), once it is committed.
+if(Python3_FOUND AND EXISTS ${PROJECT_SOURCE_DIR}/examples/demo/sample_drive_thru.wav)
+  add_test(NAME sample_recording
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/check_recording.py
+            ${PROJECT_SOURCE_DIR}/examples/demo/sample_drive_thru.wav)
 endif()
 
 # Synthetic test audio: generated at test time, never committed.
@@ -77,6 +84,19 @@ if(NOT SAA_MOCK_TESTS)
     message(FATAL_ERROR "SAA_REQUIRE_MOCK_TESTS is ON but the mock-server tests cannot run: ${_saa_ws_why}")
   endif()
   message(WARNING "skipping the mock-server tests: ${_saa_ws_why}")
+endif()
+
+# An integrator's view: install to a temporary prefix, then build the minimal
+# example with pkg-config and with find_package (and stream, given the mock).
+if(Python3_FOUND AND TARGET saa_minimal AND NOT CMAKE_CROSSCOMPILING AND NOT SAA_SANITIZE)
+  set(_saa_consumer_args)
+  if(SAA_MOCK_TESTS)
+    list(APPEND _saa_consumer_args --run)
+  endif()
+  add_test(NAME consumer
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_consumer.py
+            ${PROJECT_BINARY_DIR} ${CMAKE_C_COMPILER} ${_saa_consumer_args})
+  set_tests_properties(consumer PROPERTIES TIMEOUT 180)
 endif()
 
 # Feeder thread -> ring -> wakeup -> write, end to end.

@@ -2,11 +2,12 @@
 """live_smoke.py - streams a speech WAV to the real service and checks that a
 turn_ready comes back. Needs an API key in SAA_API_KEY; it is not run in CI.
 
-usage: live_smoke.py DEMO_BINARY WAV [--url URL] [--ca FILE] [--timeout S] [--json]
+usage: live_smoke.py DEMO_BINARY [WAV] [--url URL] [--ca FILE] [--timeout S] [--json]
 
 The demo streams silence until warmup_complete, then the WAV, then a few seconds
-of silence, so the service hears the whole utterance. Use a recording of one
-short request spoken to the device, such as "Can I get two burgers, please?".
+of silence, so the service hears the whole utterance. The WAV defaults to the
+package's sample recording (tests/data/README.md); any recording of one short
+request spoken to the device works, such as "Can I get two burgers, please?".
 """
 import argparse
 import json
@@ -15,11 +16,14 @@ import subprocess
 import sys
 import tempfile
 
+SAMPLE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                      "examples", "demo", "sample_drive_thru.wav")
+
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("demo")
-    ap.add_argument("wav")
+    ap.add_argument("wav", nargs="?", default=SAMPLE, help="speech to stream (default: the sample)")
     ap.add_argument("--url", help="broker or direct URL (default: the demo's)")
     ap.add_argument("--ca", help="CA bundle, if the system roots do not cover the service")
     ap.add_argument("--timeout", type=float, default=60.0, help="give up after this many seconds")
@@ -27,6 +31,9 @@ def main():
     args = ap.parse_args()
     if not os.environ.get("SAA_API_KEY"):
         print("live_smoke: set SAA_API_KEY to an API key", file=sys.stderr)
+        return 2
+    if not os.path.exists(args.wav):
+        print(f"live_smoke: no {args.wav}; record one (tests/data/README.md) or pass a WAV", file=sys.stderr)
         return 2
 
     with tempfile.TemporaryDirectory() as tmp:

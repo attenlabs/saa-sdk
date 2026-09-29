@@ -23,7 +23,8 @@ What it measures:
     give the figure without the pages of the TLS libraries;
   - latency: from a feed call to the mock receiving the frame (feed_bench), for
     the first sample of each 100 ms frame and for the call that completes it.
-With --live-wav, and an API key in SAA_API_KEY, it also runs live_smoke.py.
+With --live-wav, and an API key in SAA_API_KEY, it also runs live_smoke.py, on the
+package's sample recording or on the WAV given.
 """
 import argparse
 import json
@@ -389,7 +390,8 @@ def main():
     ap.add_argument("--skip-tests", action="store_true", help="measure only")
     ap.add_argument("--jobs", type=int, default=max(4, 2 * (os.cpu_count() or 2)),
                     help="conformance demos at once (default: twice the cores, at least 4)")
-    ap.add_argument("--live-wav", help="also stream this speech WAV to the real service (needs SAA_API_KEY)")
+    ap.add_argument("--live-wav", nargs="?", const=os.path.join(PKG, "examples", "demo", "sample_drive_thru.wav"),
+                    help="also stream a speech WAV, by default the sample, to the real service (needs SAA_API_KEY)")
     ap.add_argument("--out", default=os.path.join(PKG, "build", "device-report"), help="where to build and write")
     args = ap.parse_args()
     if args.live_wav and not os.environ.get("SAA_API_KEY"):

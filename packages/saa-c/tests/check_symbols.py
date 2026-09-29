@@ -12,7 +12,8 @@ ALLOWED = re.compile(r"^(saa_client_|saac_|saa_cJSON_|saa_b64_)")
 
 
 def main():
-    out = subprocess.run(["nm", "-g", sys.argv[1]], capture_output=True, text=True, check=True).stdout
+    nm = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else "nm"     # a cross build passes its own
+    out = subprocess.run([nm, "-g", sys.argv[1]], capture_output=True, text=True, check=True).stdout
     seen, bad = 0, []
     for line in out.splitlines():
         parts = line.split()

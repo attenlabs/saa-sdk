@@ -16,7 +16,9 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+import wave
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 THRESHOLD = 0.7                      # the demo's default --threshold
@@ -117,6 +119,58 @@ def check_ok(r):
         (not events_of(r, "error"), f"errors {events_of(r, 'error')}"),
         (s.get("audio_frames", 0) >= 70 and s.get("bad_frames") == 0, f"mock saw {s}"),
         ("server_profile=audio_only" in s.get("path", ""), "inferred profile missing"),
+        (first(r, "demo_start").get("schema") == 1, f"demo_start {first(r, 'demo_start')}"),
+    ]
+
+
+def check_record(r):
+    turn = first(r, "turn_ready")
+    d = r["args"][r["args"].index("--record-turns") + 1]
+    problems = []
+    try:
+        with wave.open(os.path.join(d, "0001.wav"), "rb") as w:
+            fmt = (w.getframerate(), w.getnchannels(), w.getsampwidth(), w.getnframes())
+    except (OSError, wave.Error) as e:
+        fmt = str(e)
+    sizes = [os.path.getsize(os.path.join(d, f)) if os.path.exists(os.path.join(d, f)) else None
+             for f in ("0001_1.jpg", "0001_2.jpg")]
+    problems += [
+        (r["exit"] == 0, f"exit {r['exit']}"),
+        (turn.get("wav") == "0001.wav", f"turn_ready {turn}"),
+        ([f.get("file") for f in turn.get("frames", [])] == ["0001_1.jpg", "0001_2.jpg"], f"frames {turn.get('frames')}"),
+        (fmt == (16000, 1, 2, 32000), f"0001.wav is {fmt}, want 16 kHz mono 16-bit, 32000 samples"),
+        (sizes == [102, 206], f"frame files {sizes}"),
+    ]
+    return problems
+
+
+def check_quiet(r):
+    return [
+        (r["exit"] == 0, f"exit {r['exit']}"),
+        (r["stdout"] == "", f"stdout {r['stdout'][:200]!r}"),
+        (r["stderr"] == "", f"stderr {r['stderr'][:200]!r}"),
+        (bool(events_of(r, "turn_ready")), "the JSON lines should still reach --events"),
+    ]
+
+
+def check_stdin(r):
+    turns = events_of(r, "turn_ready")
+    s = session(r, 1)
+    return [
+        (r["exit"] == 0, f"exit {r['exit']}"),
+        (first(r, "demo_start").get("wav") == "-", f"demo_start {first(r, 'demo_start')}"),
+        (len(turns) == 1 and turns[0]["samples"] == 32000, f"turn_ready {turns}"),
+        (bool(events_of(r, "wav_end")), "no wav_end at the end of the stream"),
+        # 8 s of audio written in real time: every frame arrives, none is dropped
+        (75 <= s.get("audio_frames", 0) <= 95 and s.get("bad_frames") == 0, f"mock saw {s}"),
+    ]
+
+
+def check_channel(r):
+    return [
+        (r["exit"] == 0, f"exit {r['exit']}"),
+        (first(r, "demo_start").get("channel") == 1, f"demo_start {first(r, 'demo_start')}"),
+        (bool(events_of(r, "turn_ready")), "no turn_ready"),
     ]
 
 
@@ -409,6 +463,10 @@ SCENARIOS = {
                             check_slowlink),
     "tls":                 ("tls", "tls", ["--duration", "9", "--ca", "{ca}"], check_tls),
     "tls_noca":            ("tls_noca", "tls", ["--duration", "3"], check_tls_noca),
+    "record":              ("ok-record", "broker", ["--tail", "2", "--record-turns", "{tmp}/turns"], check_record),
+    "quiet":               ("ok-quiet", "broker", ["--tail", "1", "--quiet"], check_quiet),
+    "stdin":               ("ok-stdin", "broker", ["{stdin}", "--tail", "1"], check_stdin),
+    "channel":             ("ok-channel", "broker", ["--tail", "1", "--channel", "1"], check_channel),
 }
 TLS_SCENARIOS = {"tls", "tls_noca"}
 
@@ -458,25 +516,58 @@ def expected_seconds(name):
     return float(extra[extra.index("--duration") + 1]) if "--duration" in extra else 10.0
 
 
+def stream_wav(src, dst):
+    """A WAV as a live writer sends it: sizes it cannot know yet, then 10 ms of audio every 10 ms."""
+    with wave.open(src, "rb") as w:
+        rate, ch, width, pcm = w.getframerate(), w.getnchannels(), w.getsampwidth(), w.readframes(w.getnframes())
+    header = bytearray(open(src, "rb").read(44))
+    header[4:8] = header[40:44] = b"\xff\xff\xff\xff"           # placeholders, as arecord and ffmpeg write
+    step = rate // 100 * ch * width
+    try:
+        dst.write(bytes(header))
+        t = time.monotonic()
+        for i in range(0, len(pcm), step):
+            dst.write(pcm[i:i + step])
+            dst.flush()
+            t += 0.01
+            time.sleep(max(0.0, t - time.monotonic()))
+    except (BrokenPipeError, OSError):
+        pass
+    finally:
+        try:
+            dst.close()
+        except OSError:
+            pass
+
+
 def run_scenario(name, demo, urls, wav, tmp, fill):
     key, via, extra, _ = SCENARIOS[name]
     out = os.path.join(tmp, f"{name}.jsonl")
-    cmd = [demo, "--url", urls[via], "--wav", wav, "--events", out] + [a.format(**fill) for a in extra]
+    stream = "{stdin}" in extra
+    args = [a.format(**fill) for a in extra if a != "{stdin}"]
+    cmd = [demo, "--url", urls[via], "--wav", "-" if stream else wav, "--events", out] + args
     env = dict(os.environ, SAA_API_KEY=key)
     started = time.monotonic()
-    try:
-        p = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=60)
-        code, stderr = p.returncode, p.stderr
-    except subprocess.TimeoutExpired:
-        code, stderr = "timeout", ""
-    with open(os.path.join(tmp, f"{name}.stderr"), "w") as f:
-        f.write(stderr)
+    with open(os.path.join(tmp, f"{name}.stdout"), "w+") as so, open(os.path.join(tmp, f"{name}.stderr"), "w+") as se:
+        p = subprocess.Popen(cmd, env=env, stdout=so, stderr=se,
+                             stdin=subprocess.PIPE if stream else subprocess.DEVNULL)
+        if stream:
+            threading.Thread(target=stream_wav, args=(fill["wav16"], p.stdin), daemon=True).start()
+        try:
+            code = p.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait()
+            code = "timeout"
+        so.seek(0)
+        se.seek(0)
+        stdout, stderr = so.read(), se.read()
     events = []
     if os.path.exists(out):
         with open(out) as f:
             events = [json.loads(line) for line in f if line.strip()]
-    return {"name": name, "key": key, "exit": code, "events": events, "stderr": stderr,
-            "seconds": time.monotonic() - started}
+    return {"name": name, "key": key, "exit": code, "events": events, "stdout": stdout, "stderr": stderr,
+            "args": args, "seconds": time.monotonic() - started}
 
 
 def read_summaries(paths):
@@ -507,6 +598,19 @@ def start_mock(tmp, name, args, summary):
                             stdout=log, stderr=subprocess.STDOUT)
 
 
+def cli_checks(demo, wav):
+    """The demo's own flags, which need no server."""
+    env = dict(os.environ, SAA_API_KEY="cli")
+    h = subprocess.run([demo, "--help"], capture_output=True, text=True, env=env)
+    v = subprocess.run([demo, "--version"], capture_output=True, text=True, env=env)
+    bad = subprocess.run([demo, "--wav", wav, "--channel", "9"], capture_output=True, text=True, env=env)
+    return [
+        (h.returncode == 0 and "usage:" in h.stdout and "--record-turns" in h.stdout, f"--help: exit {h.returncode}"),
+        (v.returncode == 0 and v.stdout.startswith("saa_client_demo "), f"--version: exit {v.returncode} {v.stdout!r}"),
+        (bad.returncode == 5 and "--channel 9" in bad.stderr, f"--channel 9 on a stereo WAV: exit {bad.returncode}"),
+    ]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("demo")
@@ -528,7 +632,8 @@ def main():
         subprocess.run([sys.executable, os.path.join(HERE, "gen_audio.py"), os.path.join(tmp, "audio")],
                        check=True, stdout=subprocess.DEVNULL)
         wav = os.path.join(tmp, "audio", "speech_48k_stereo.wav")
-        fill = {"jpeg": make_jpegs(os.path.join(tmp, "jpeg"))}
+        fill = {"jpeg": make_jpegs(os.path.join(tmp, "jpeg")), "tmp": tmp,
+                "wav16": os.path.join(tmp, "audio", "speech_16k_mono.wav")}
         skipped = []
 
         # The main mock serves the scenarios that need no proxy. The proxies get a process of
@@ -577,6 +682,11 @@ def main():
             r["sessions"] = sorted((s for s in rows if s["scenario"] == r["key"]), key=lambda s: s["session"])
 
         failed = 0
+        cli = [msg for ok, msg in cli_checks(args.demo, wav) if not ok]
+        print(f"{'cli':<20} {'ok' if not cli else 'FAIL'}")
+        for msg in cli:
+            print(f"    - {msg}")
+        failed += 1 if cli else 0
         for r in runs:
             try:
                 problems = [msg for ok, msg in SCENARIOS[r["name"]][3](r) if not ok]

@@ -6,6 +6,7 @@ usage: run_harness.py CLIENT_HARNESS_BINARY
 """
 import json
 import os
+import shlex
 import socket
 import subprocess
 import sys
@@ -13,6 +14,8 @@ import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# a cross build's binaries run under an emulator, e.g. SAA_TEST_EMULATOR=qemu-arm
+emulator = shlex.split(os.environ.get("SAA_TEST_EMULATOR", ""))
 
 
 def free_port():
@@ -72,7 +75,7 @@ def main():
             if not wait_listening(ws_port):
                 print("mock server did not start")
                 return 1
-            run = subprocess.run([binary, f"ws://127.0.0.1:{ws_port}/ws"],
+            run = subprocess.run(emulator + [binary, f"ws://127.0.0.1:{ws_port}/ws"],
                                  capture_output=True, text=True, timeout=60)
             sessions = []
             for _ in range(50):                         # the mock writes when a session ends
