@@ -14,5 +14,15 @@ if(NOT TARGET PkgConfig::SAAC_LWS)
   endif()
 endif()
 
+# a capture build also needs ALSA
+if(@SAA_WITH_CAPTURE@ AND NOT TARGET PkgConfig::SAAC_ALSA)
+  pkg_check_modules(SAAC_ALSA QUIET IMPORTED_TARGET alsa)
+  if(NOT SAAC_ALSA_FOUND)
+    set(saaclient_FOUND FALSE)
+    set(saaclient_NOT_FOUND_MESSAGE "saaclient was built with capture and needs ALSA, which pkg-config could not find")
+    return()
+  endif()
+endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/saaclientTargets.cmake")
 check_required_components(saaclient)

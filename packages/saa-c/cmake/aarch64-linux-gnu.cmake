@@ -12,6 +12,10 @@ set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR aarch64)
 set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)
 set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
+# Multiarch puts the target's files in the host's /usr, under their own triple,
+# so there is no CMAKE_FIND_ROOT_PATH: the CMAKE_FIND_ROOT_PATH_MODE_* settings
+# only act below one. This architecture, and pkg-config's LIBDIR below, point
+# the searches at the target's files instead.
 set(CMAKE_LIBRARY_ARCHITECTURE aarch64-linux-gnu)
 
 # pkg-config reads the target's .pc files, never the host's

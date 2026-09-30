@@ -12,6 +12,10 @@ set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR arm)
 set(CMAKE_C_COMPILER arm-linux-gnueabihf-gcc)
 set(CMAKE_CXX_COMPILER arm-linux-gnueabihf-g++)
+# Multiarch puts the target's files in the host's /usr, under their own triple,
+# so there is no CMAKE_FIND_ROOT_PATH: the CMAKE_FIND_ROOT_PATH_MODE_* settings
+# only act below one. This architecture, and pkg-config's LIBDIR below, point
+# the searches at the target's files instead.
 set(CMAKE_LIBRARY_ARCHITECTURE arm-linux-gnueabihf)
 
 # pkg-config reads the target's .pc files, never the host's
