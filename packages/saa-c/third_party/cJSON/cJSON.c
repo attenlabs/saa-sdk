@@ -89,7 +89,18 @@ typedef struct {
     const unsigned char *json;
     size_t position;
 } error;
-static error global_error = { NULL, 0 };
+/* saa-c: one per thread. Every parse writes it, and a program can parse on
+ * several threads at once: each client's service thread, and a host's own. */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
+#define SAA_CJSON_THREAD_LOCAL _Thread_local
+#elif defined(__GNUC__) || defined(__clang__)
+#define SAA_CJSON_THREAD_LOCAL __thread
+#elif defined(_MSC_VER)
+#define SAA_CJSON_THREAD_LOCAL __declspec(thread)
+#else
+#define SAA_CJSON_THREAD_LOCAL
+#endif
+static SAA_CJSON_THREAD_LOCAL error global_error = { NULL, 0 };
 
 CJSON_PUBLIC(const char *) cJSON_GetErrorPtr(void)
 {
