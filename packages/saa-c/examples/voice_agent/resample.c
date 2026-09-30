@@ -78,18 +78,34 @@ int16_t *va_resample(const int16_t *in, size_t n, int rate_in, int rate_out, flo
         for (long i = 0; i < taps; i++) row[i] = (float)(row[i] / sum);   /* unity at DC, every phase */
     }
 
+    /* the input as float once, so the inner loop is a plain dot product */
+    float *x = malloc((n ? n : 1) * sizeof *x);
+    if (!x) {
+        free(h);
+        free(out);
+        return NULL;
+    }
+    for (size_t i = 0; i < n; i++) x[i] = in[i];
     for (size_t j = 0; j < nout; j++) {
         unsigned long long pos = (unsigned long long)j * (unsigned long long)down;
         long k0 = (long)(pos / (unsigned long long)up), p = (long)(pos % (unsigned long long)up);
         const float *row = h + p * taps;
         long first = k0 - taps / 2 + 1;
-        float acc = 0.0f;
-        for (long i = 0; i < taps; i++) {
-            long k = first + i;
-            if (k >= 0 && (size_t)k < n) acc += row[i] * in[k];
+        long lo = first < 0 ? -first : 0;                    /* the taps inside the buffer */
+        long hi = first + taps > (long)n ? (long)n - first : taps;
+        const float *xs = x + first;
+        float a0 = 0.0f, a1 = 0.0f, a2 = 0.0f, a3 = 0.0f;   /* four sums, so the adds overlap */
+        long i = lo;
+        for (; i + 4 <= hi; i += 4) {
+            a0 += row[i] * xs[i];
+            a1 += row[i + 1] * xs[i + 1];
+            a2 += row[i + 2] * xs[i + 2];
+            a3 += row[i + 3] * xs[i + 3];
         }
-        out[j] = saturate(acc * gain);
+        for (; i < hi; i++) a0 += row[i] * xs[i];
+        out[j] = saturate(((a0 + a1) + (a2 + a3)) * gain);
     }
+    free(x);
     free(h);
     return out;
 }
