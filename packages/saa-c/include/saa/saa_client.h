@@ -56,6 +56,7 @@ typedef enum {
     SAA_CLIENT_ERR_AUTH       = -5,  /* start_wait: credentials or account rejected */
     SAA_CLIENT_ERR_BUSY       = -6,  /* start_wait: rate limited or no capacity */
     SAA_CLIENT_ERR_TRANSPORT  = -7,  /* start_wait: DNS, TLS, socket, or other failure */
+    SAA_CLIENT_ERR_DEVICE     = -8,  /* start_wait: the microphone could not open (capture) */
 } saa_client_rc_t;
 
 /* ── Video source; also picks the default server_profile ───────────── */
@@ -133,7 +134,8 @@ typedef struct {
 
 /* ── Lifecycle ─────────────────────────────────────────────────────── */
 
-/* Returns NULL on invalid config (missing token, bad URL or server_profile). */
+/* Returns NULL on invalid config (missing token, bad URL or server_profile), or
+ * when it asks for capture from a library built without it (SAA_WITH_CAPTURE). */
 SAA_CLIENT_API saa_client_t *saa_client_create(const saa_client_config_t *cfg);
 
 /* Starts the service thread and returns at once. Allowed again after stop(). */
@@ -181,6 +183,9 @@ SAA_CLIENT_API int saa_client_feed_video(saa_client_t *c, const uint8_t *jpeg, s
 SAA_CLIENT_API size_t      saa_client_session_id(const saa_client_t *c, char *buf, size_t len);
 SAA_CLIENT_API saa_state_t saa_client_state(const saa_client_t *c);
 SAA_CLIENT_API int         saa_client_is_connected(const saa_client_t *c);
+/* 1 from start() until stop(), or until the session ends by itself on an error
+ * it does not retry. Capture hosts have no feed call to learn that from. */
+SAA_CLIENT_API int         saa_client_is_active(const saa_client_t *c);
 SAA_CLIENT_API float       saa_client_threshold(const saa_client_t *c);
 
 /* Process-wide. Receives SAA_LOG_* messages, including libwebsockets output,
