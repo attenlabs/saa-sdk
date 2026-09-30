@@ -70,6 +70,11 @@ def main():
         env["PKG_CONFIG_PATH"] = os.pathsep.join(filter(None, [os.path.dirname(pcs[0]),
                                                                env.get("PKG_CONFIG_PATH")]))
         flags = run(["pkg-config", "--cflags", "--libs", "saaclient"], env=env)
+        # a shared library in a private prefix is found through an rpath, as an
+        # integrator links against one; a static build ignores it
+        libdir = run(["pkg-config", "--variable=libdir", "saaclient"], env=env).stdout.strip()
+        if libdir:
+            flags.stdout += f" -Wl,-rpath,{libdir}"
         via_pc = os.path.join(tmp, "minimal_pc")
         if flags.returncode or run([cc, os.path.join(PKG, "examples", "minimal", "main.c"), "-o", via_pc]
                                    + shlex.split(flags.stdout)).returncode:

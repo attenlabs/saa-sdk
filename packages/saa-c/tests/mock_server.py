@@ -43,8 +43,10 @@ per token, each from 1, so a scenario can fail once and then recover.
                        last 2 s of PCM is kept, so the mock does not grow over a long run.
   voiceagent           the voice agent's test (run_voice_agent.py): turn_ready at audio frames
                        40, 90, 150, and 160, the last while the third's reply is still held back by
-                       the Realtime mock, and an interrupt 10 frames after the second
-                       responding_start. The summary adds each turn's frame, samples, and time.
+                       the Realtime mock. An interrupt 10 frames after the second responding_start,
+                       then, as the service does, a turn of the audio before it 8 frames later.
+                       The summary adds each turn's frame, samples, time, and whether it came
+                       from the interrupt.
 
 The happy path: started; warmup_complete after 20 audio frames; a prediction and a vad every
 4 frames from then; state listening at frame 40; at frame 60 state sending, a turn_ready that
@@ -82,6 +84,7 @@ SOAK_CYCLE = 300                     # audio frames between turns: 30 s
 SOAK_DROP = 6000                     # audio frames per session: 10 minutes
 VA_TURNS = (40, 90, 150, 160)        # voiceagent: the audio frames that end a turn
 VA_INTERRUPT_AFTER = 10              # voiceagent: frames from the second responding_start
+VA_PREROLL_AFTER = 8                 # voiceagent: frames from the interrupt to the turn it makes
 
 TURN_JPEGS = [b"\xff\xd8\xff\xe0" + bytes(96) + b"\xff\xd9",   # 102 bytes
               b"\xff\xd8\xff\xdb" + bytes(200) + b"\xff\xd9"]  # 206 bytes
@@ -247,7 +250,7 @@ async def handler(ws):
     peaks = scenario.startswith("capture")
     soak = scenario == "soak"
     va = scenario == "voiceagent"
-    va_responding, va_interrupt_at = 0, None
+    va_responding, va_interrupt_at, va_preroll_at = 0, None, None
     pcm = bytearray()
     t0 = time.monotonic()
     turn_sent = False
@@ -302,7 +305,7 @@ async def handler(ws):
                                  "source": "model", "num_faces": 0, "responding": False})
                         await j({"type": "vad", "is_speech": cls == 2, "probability": 0.97 if cls == 2 else 0.02})
                     if va:
-                        if n_audio in VA_TURNS:
+                        if n_audio in VA_TURNS or n_audio == va_preroll_at:
                             turn = bytes(pcm[-20 * 3200:])
                             await j({"type": "state", "state": "sending"})
                             await j({"type": "turn_ready", "duration": len(turn) / 32000.0,
@@ -310,10 +313,13 @@ async def handler(ws):
                                      "server_turn_ready_ts_ms": int(time.time() * 1000)})
                             await j({"type": "state", "state": "idle"})
                             va_turns.append({"frame": n_audio, "samples": len(turn) // 2,
-                                             "t": round(time.clock_gettime(time.CLOCK_MONOTONIC), 4)})
+                                             "t": round(time.clock_gettime(time.CLOCK_MONOTONIC), 4),
+                                             "preroll": n_audio == va_preroll_at})
                         if n_audio == va_interrupt_at:
                             await j({"type": "interrupt", "fade_ms": 300, "confidence": 0.93})
+                            await j({"type": "state", "state": "listening"})
                             va_interrupts.append(round(time.clock_gettime(time.CLOCK_MONOTONIC), 4))
+                            va_preroll_at = n_audio + VA_PREROLL_AFTER
                         continue
                     if cyc == 40:
                         await j({"type": "state", "state": "listening"})

@@ -19,7 +19,7 @@ The quickstart streams it with the demo, and `tests/live_smoke.py` streams it to
 the hosted service and expects a `turn_ready`. It ships in a public repository,
 so it must be owned outright by the project and redistributable under
 Apache-2.0: record it in-house, with the speaker's written agreement to its
-publication. Do not use text-to-speech output whose licence restricts
+publication. Do not use text-to-speech output whose license restricts
 redistribution.
 
 - Mono, 16 kHz, 16-bit PCM WAV.
@@ -31,10 +31,10 @@ redistribution.
 `tests/check_recording.py` checks a file against these points. Once the file is
 committed, CTest runs the check too.
 
-Recording it on Linux, with the microphone's card from `arecord -l`:
+Recording it on Linux, with the microphone's card name from `arecord -l`:
 
 ```bash
-arecord -D plughw:1,0 -f S16_LE -r 16000 -c 1 -d 9 sample_drive_thru.wav
+arecord -D plughw:CARD=Lite -f S16_LE -r 16000 -c 1 -d 9 sample_drive_thru.wav
 ```
 
 From any other recording, convert with

@@ -5,16 +5,18 @@ agent reads a WAV, writes its speaker to another, and logs its events. This chec
 each mock, what the speaker played, and when:
 
   turn 1  played out, then the tail, then responding_stop
-  turn 2  interrupted a second into playback: faded, truncated at what was played
-  turn 3  its reply held back by the Realtime mock; turn 4 arrives meanwhile, so reply 3 is
-          cancelled before any of it plays
+  turn 2  interrupted a second into playback: faded, truncated at what was played. SAA then
+          sends a turn of the audio before its interrupt, as the service does; it is answered
+  turn 3  its reply held back by the Realtime mock; turn 4 arrives meanwhile, so that reply
+          is cancelled before any of it plays
   turn 4  played out
 
 Variants, for the echo handling a device needs:
   default      responding only
   muted        --mute-while-talking, and --record-turns: SAA is also muted while the device
                talks, and each turn and reply is written to a WAV
-  half-duplex  --mute-while-talking --barge-in off: the interrupt is ignored, so reply 2 plays out
+  half-duplex  --mute-while-talking --barge-in off: the interrupt is ignored, SAA is told again that
+               the device is talking, reply 2 plays out, and the interrupt's turn is dropped
 
 usage: run_voice_agent.py SAA_VOICE_AGENT_BINARY [--variant default|muted|half-duplex]
 """
@@ -127,7 +129,7 @@ def main():
                               "--ws-port", str(ws), "--summary", saa_sum],
                              stdout=open(os.path.join(tmp, "saa.log"), "w"), stderr=subprocess.STDOUT),
             subprocess.Popen([sys.executable, os.path.join(HERE, "mock_realtime.py"), "--port", str(rt),
-                              "--summary", rt_sum, "--hold", "3:2", "--tone-s", str(TONE_S)],
+                              "--summary", rt_sum, "--hold", "4:2" if barge else "3:2", "--tone-s", str(TONE_S)],
                              stdout=open(os.path.join(tmp, "rt.log"), "w"), stderr=subprocess.STDOUT),
         ]
         try:
@@ -165,33 +167,44 @@ def main():
             return 1
         saa, rts = saa[0], rts[0]
 
-        # what reached the Realtime mock
+        # the turns: SAA's four, and the one it made from its interrupt, which is
+        # answered with barge-in on, and dropped as the device's own voice with it off
+        turns = saa["va_turns"]
+        check(len(turns) == 5 and sum(t["preroll"] for t in turns) == 1,
+              f"SAA sent 5 turns, one from its interrupt: {[(t['frame'], t['preroll']) for t in turns]}")
+        if len(turns) != 5:
+            return 1
+        sent = turns if barge else [t for t in turns if not t["preroll"]]
+        n_sent = len(sent)
         check(not rts["problems"], f"the Realtime mock found no problems {rts['problems']}")
         check(rts["user_agent"].startswith("saa-c-voice-agent/"), f"User-Agent {rts['user_agent']!r}")
-        turns = saa["va_turns"]
         items = [i for i in rts["items"] if i["role"] == "user"]
-        check(len(turns) == 4 and len(items) == 4, f"4 turns sent, 4 user items received ({len(turns)}, {len(items)})")
-        for k, (t, i) in enumerate(zip(turns, items), 1):
+        check(len(items) == n_sent, f"{n_sent} turns reached the Realtime mock ({len(items)})")
+        for k, (t, i) in enumerate(zip(sent, items), 1):
             check(i["input_audio_samples"] == t["samples"] * 3 // 2 and i["content"] == ["input_audio"]
                   and i["via"] == "input_audio_buffer.commit",
                   f"turn {k}: {t['samples']} samples at 16 kHz arrived as {i['input_audio_samples']} at 24 kHz, "
                   f"through {i['via']}, parts {i['content']}")
         resp = rts["responses"]
-        check([x["status"] for x in resp] == ["completed", "completed", "cancelled", "completed"],
-              f"replies completed, completed, cancelled, completed: {[x['status'] for x in resp]}")
+        held = 3 if barge else 2                          # the index of SAA turn 3's reply, which the mock holds
+        want_status = ["completed"] * n_sent
+        want_status[held] = "cancelled"
+        check([x["status"] for x in resp] == want_status, f"replies {want_status}: {[x['status'] for x in resp]}")
         check(all((x.get("metadata") or {}).get("turn") for x in resp), "each response.create tagged its turn")
 
-        # turn 3: cancelled while held, before turn 4's item
+        # SAA's turn 3: its reply cancelled while held, before turn 4's audio
         cancels = rts["cancels"]
-        check(len(cancels) == 1 and cancels[0]["response"] == resp[2]["id"] and cancels[0]["audio_samples_sent"] == 0,
-              f"one response.cancel, for reply 3, before any of its audio: {cancels}")
-        if cancels and len(items) == 4:
-            check(cancels[0]["t"] < items[3]["t"], "the cancel went before turn 4's item")
+        check(len(cancels) == 1 and len(resp) > held and cancels[0]["response"] == resp[held]["id"]
+              and cancels[0]["audio_samples_sent"] == 0,
+              f"one response.cancel, for SAA turn 3's reply, before any of its audio: {cancels}")
+        if cancels and len(items) == n_sent:
+            check(cancels[0]["t"] < items[-1]["t"], "the cancel went before the last turn's audio")
 
         # turn 2: the truncate, or with barge-in off none
         stopping = by("playback_stopping")
         truncs = rts["truncates"]
         played_ms = stopping[0]["played_ms"] if stopping else None
+        intr = by("interrupt")
         if barge:
             check(len(truncs) == 1 and truncs[0]["ok"] and truncs[0]["item_id"] == resp[1].get("item_id")
                   and truncs[0]["audio_end_ms"] == played_ms,
@@ -200,7 +213,6 @@ def main():
                 check(1000 <= truncs[0]["audio_end_ms"] <= 2000,
                       f"reply 2 cut between 1 and 2 s ({truncs[0]['audio_end_ms']} ms)")
         else:
-            intr = by("interrupt")
             check(not truncs and not stopping and len(intr) == 1 and intr[0]["ignored"],
                   f"the interrupt was ignored: no fade, no truncate ({intr}, {truncs})")
 
@@ -208,80 +220,91 @@ def main():
         acts = [(a["action"], t) for a, t in zip(saa["actions"], saa["action_times"])
                 if a["action"] in ("responding_start", "responding_stop", "mute", "unmute")]
         names = [a for a, _ in acts]
-        want = (["responding_start", "mute", "responding_stop", "unmute"] if muted
-                else ["responding_start", "responding_stop"]) * 3
-        check(names == want, f"responding started and stopped 3 times, {'each with mute' if muted else 'no mute'}: {names}")
+        on = ["responding_start", "mute"] if muted else ["responding_start"]
+        off = ["responding_stop", "unmute"] if muted else ["responding_stop"]
+        if barge:
+            want = (on + off) * 4                          # replies 1, 2, the interrupt's, and 4
+        else:
+            want = on + off + on + on + off + on + off     # reply 2 says it again after the interrupt
+        check(names == want, f"responding and mute: {names}")
         if muted and names == want:
             pairs = [round(acts[i + 1][1] - acts[i][1], 3) for i in range(0, len(acts), 2)]
             check(all(0 <= g <= 0.05 for g in pairs), f"mute and unmute went with responding: {pairs} s apart")
-        starts, ends = by("playback_start"), [e for e in by("playback_end")]
-        rs = [t for a, t in acts if a == "responding_start"]
+        starts, ends = by("playback_start"), by("playback_end")
+        again = [e.get("again", False) for e in by("responding_start")]
+        rs = [t for (a, t) in acts if a == "responding_start"]
+        first = [t for t, g in zip(rs, again) if not g]    # the one each reply starts with
         re_ = [t for a, t in acts if a == "responding_stop"]
-        if len(starts) == 3 and len(rs) == 3:
-            gaps = [round(r - mono(p), 3) for r, p in zip(rs, starts)]
+        if len(starts) == len(first) and first:
+            gaps = [round(r - mono(p), 3) for r, p in zip(first, starts)]
             # responding_start goes as the reply is handed to the speaker, up to a period
             # before the speaker writes its first samples
             check(all(-0.1 <= g <= 0.15 for g in gaps), f"responding_start reached SAA as playback began: {gaps} s")
         full = [e for e in ends if not e["interrupted"]]
-        whole = (0, 2) if barge else (0, 1, 2)            # the responding_stops that follow a whole reply
-        if len(full) == len(whole) and len(re_) == 3:
-            tails = [round(re_[i] - mono(e), 3) for i, e in zip(whole, full)]
+        whole = [k for k, e in enumerate(ends) if not e["interrupted"]]
+        if len(re_) == len(ends):
+            tails = [round(re_[k] - mono(e), 3) for k, e in zip(whole, full)]
             check(all(TAIL_MS / 1000 - 0.08 <= g <= TAIL_MS / 1000 + 0.2 for g in tails),
                   f"responding_stop came the tail after the drain: {tails} s")
-        if barge and saa["va_interrupts"] and len(re_) >= 2:
-            g = round(re_[1] - saa["va_interrupts"][0], 3)
-            check(0 <= g <= 0.2, f"responding_stop came at once after the interrupt: {g} s")
-        intr, cut = by("interrupt"), [e for e in ends if e["interrupted"]]
+        if saa["va_interrupts"]:
+            ti = saa["va_interrupts"][0]
+            if barge and len(re_) >= 2:
+                g = round(re_[1] - ti, 3)
+                check(0 <= g <= 0.2, f"responding_stop came at once after the interrupt: {g} s")
+            if not barge and len(rs) >= 3:
+                g = round(rs[2] - ti, 3)
+                check(0 <= g <= 0.2, f"SAA was told again the device is talking, {g} s after the interrupt")
+        cut = [e for e in ends if e["interrupted"]]
         if barge and intr and cut:
             g = round((cut[0]["ts_ms"] - intr[0]["ts_ms"]) / 1000.0, 3)
             check(g <= (FADE_MS + 100) / 1000.0, f"playback stopped {g} s after the interrupt, within fade_ms + 100 ms")
 
-        # what the speaker played
+        # what the speaker played: reply n at 300 + 100 n Hz
         rate, x = read_wav(wav_out)
         segs = segments(rate, x)
         want_peak = AMPLITUDE * 10 ** (GAIN_DB / 20)
         pitches = [round((f - 300) / 100) for _, _, _, f in segs]
-        check(pitches == [1, 2, 4], f"the speaker played replies 1, 2, and 4, and nothing of 3: {pitches} "
-              f"({[round(f) for *_, f in segs]} Hz)")
-        if len(segs) == 3:
+        want_pitches = [1, 2, 3, 5] if barge else [1, 2, 4]
+        check(pitches == want_pitches, f"the speaker played replies {want_pitches}, and nothing of the cancelled one: "
+              f"{pitches} ({[round(f) for *_, f in segs]} Hz)")
+        if len(segs) == len(want_pitches):
             peaks = [p for _, _, p, _ in segs]
             check(all(abs(p - want_peak) / want_peak < 0.03 for p in peaks),
                   f"at +{GAIN_DB:g} dB: peaks {peaks}, expected {want_peak:.0f}")
             lens = [round(e - a, 2) for a, e, _, _ in segs]
-            check(abs(lens[0] - TONE_S) < 0.05 and abs(lens[2] - TONE_S) < 0.05,
-                  f"replies 1 and 4 played whole: {lens[0]} and {lens[2]} s of {TONE_S}")
-            if not barge:
-                check(abs(lens[1] - TONE_S) < 0.05, f"reply 2 played whole, the interrupt ignored: {lens[1]} s")
-            elif played_ms is not None:
+            whole_lens = [l for k, l in enumerate(lens) if not (barge and k == 1)]
+            check(all(abs(l - TONE_S) < 0.05 for l in whole_lens), f"the whole replies played whole: {lens} s")
+            if barge and played_ms is not None:
                 check(abs(lens[1] - played_ms / 1000.0) < 0.06,
                       f"reply 2 played {lens[1]} s, as the truncate says ({played_ms} ms)")
-            if barge:
                 a, e = int(segs[1][0] * rate), int(segs[1][1] * rate)
                 tail = max(abs(v) for v in x[e - rate // 50:e]) if e - a > rate // 25 else 0
                 check(tail < want_peak * 0.2, f"reply 2 faded out: its last 20 ms peak at {tail}")
 
-        # the agent's own account
-        t_ev = by("turn")
+        # the agent's own account, in turn order
+        t_ev = sorted(by("turn"), key=lambda t: t["turn"])
         outcomes = [t["outcome"] for t in t_ev]
-        check(outcomes == ["played", "interrupted" if barge else "played", "cancelled", "played"],
-              f"turn outcomes {outcomes}")
-        check([t["heard"] for t in t_ev] == [f"turn {k}" for k in range(1, 5)],
-              f"each line has what the model heard: {[t['heard'] for t in t_ev]}")
-        check([t["said"] for t in t_ev if t["outcome"] != "cancelled"] == ["reply 1", "reply 2", "reply 4"],
-              f"and what the replies said: {[t['said'] for t in t_ev]}")
+        want_out = (["played", "interrupted", "played", "cancelled", "played"] if barge
+                    else ["played", "played", "dropped", "cancelled", "played"])
+        check(outcomes == want_out, f"turn outcomes {outcomes}")
+        heard = [t["heard"] for t in t_ev if t["outcome"] != "dropped"]
+        check(heard == [f"turn {k}" for k in range(1, n_sent + 1)], f"each line has what the model heard: {heard}")
+        said = [t["said"] for t in t_ev if t["outcome"] not in ("cancelled", "dropped")]
+        check(said == ([f"reply {k}" for k in (1, 2, 3, 5)] if barge else [f"reply {k}" for k in (1, 2, 4)]),
+              f"and what the replies said: {said}")
         summary = by("summary")
-        check(bool(summary) and summary[0]["played"] == (2 if barge else 3)
-              and summary[0]["interrupted"] == (1 if barge else 0)
-              and summary[0]["cancelled"] == 1 and summary[0]["lost"] == 0, f"summary {summary}")
+        check(bool(summary) and summary[0]["played"] == 3 and summary[0]["interrupted"] == (1 if barge else 0)
+              and summary[0]["cancelled"] == 1 and summary[0]["lost"] == 0
+              and summary[0]["dropped"] == (0 if barge else 1), f"summary {summary}")
 
         # --record-turns: what SAA sent, and what the model said
         if variant == "muted":
             got = sorted(os.listdir(rec)) if os.path.isdir(rec) else []
-            want_files = [f"{k:04d}_turn.wav" for k in range(1, 5)] + [f"{k:04d}_reply.wav" for k in (1, 2, 4)]
-            check(sorted(want_files) == got, f"the recordings: {got}")
-            if sorted(want_files) == got:
-                sizes = [(read_wav(os.path.join(rec, f"{k:04d}_turn.wav"))) for k in range(1, 5)]
-                check(all(r == 16000 and len(v) == t["samples"] for (r, v), t in zip(sizes, turns)),
+            want_files = sorted([f"{k:04d}_turn.wav" for k in range(1, 6)] + [f"{k:04d}_reply.wav" for k in (1, 2, 3, 5)])
+            check(want_files == got, f"the recordings: {got}")
+            if want_files == got:
+                waves = [read_wav(os.path.join(rec, f"{k:04d}_turn.wav")) for k in range(1, 6)]
+                check(all(r == 16000 and len(v) == t["samples"] for (r, v), t in zip(waves, turns)),
                       "each turn's WAV holds the 16 kHz audio SAA sent")
                 r2, v2 = read_wav(os.path.join(rec, "0002_reply.wav"))
                 check(r2 == 24000 and len(v2) == int(TONE_S * 24000),

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help build test test-js test-py clean
+.PHONY: help build test test-js test-py test-c clean
 
 help:  ## Show available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | sort | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -15,6 +15,11 @@ test-js:  ## Run the JS test suite
 
 test-py:  ## Run the Python test suite (exit 5 = no tests collected; tolerated during migration)
 	python -m pytest packages/saa-py || [ $$? -eq 5 ]
+
+test-c:  ## Build the C client (packages/saa-c) and run its tests; needs cmake + libwebsockets
+	cmake -S packages/saa-c -B packages/saa-c/build
+	cmake --build packages/saa-c/build
+	ctest --test-dir packages/saa-c/build --output-on-failure
 
 clean:  ## Remove the JS build output
 	npm run clean --prefix packages/saa-js
