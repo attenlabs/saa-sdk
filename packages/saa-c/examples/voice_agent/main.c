@@ -17,7 +17,7 @@
  * line. The README describes both.
  *
  * Exit codes: 0 clean, 2 a key was refused, 3 rate limited or no capacity,
- * 4 transport gave up, 5 bad arguments, 6 a device did not open.
+ * 4 transport gave up, 5 bad arguments, 6 microphone or the speaker did not open.
  */
 
 #include "saa/saa_client.h"
@@ -33,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -69,9 +70,10 @@
 
 typedef struct {
     const char *url, *openai_url, *model, *voice, *reasoning, *speaker, *events_path, *ca_file;
-    const char *wav_path, *alsa, *v4l2, *mjpeg, *greet;
+    const char *wav_path, *alsa, *v4l2, *mjpeg, *greet, *record_dir;
     char       *instructions;
     int         channel, width, height, fps, utterance, interjections;
+    int         mute_talking, barge_in;          /* echo handling: see set_responding() */
     double      gain_db, tail_ms, threshold, duration_s;
 } opts_t;
 
@@ -116,18 +118,16 @@ static void json_str(FILE *f, const char *s)
     fputc('"', f);
 }
 
-/* emit("turn_sent", I("turn", 3), S("item_id", id), NULL) - one JSON line to --events */
-static void emit(const char *event, ...)
+/* One JSON line to --events, stamped with the monotonic time t. */
+static void vemit(double t, const char *event, va_list ap)
 {
     pthread_mutex_lock(&g_mu);
     if (!g_out) {
         pthread_mutex_unlock(&g_mu);
         return;
     }
-    fprintf(g_out, "{\"ts_ms\":%.1f,\"event\":", (now_s() - g_t0) * 1000.0);
+    fprintf(g_out, "{\"ts_ms\":%.1f,\"event\":", (t - g_t0) * 1000.0);
     json_str(g_out, event);
-    va_list ap;
-    va_start(ap, event);
     const char *key;
     while ((key = va_arg(ap, const char *)) != NULL) {
         fprintf(g_out, ",");
@@ -153,10 +153,28 @@ static void emit(const char *event, ...)
         }
         }
     }
-    va_end(ap);
     fprintf(g_out, "}\n");
     fflush(g_out);
     pthread_mutex_unlock(&g_mu);
+}
+
+/* emit("turn_sent", I("turn", 3), S("item_id", id), NULL): stamped now. */
+static void emit(const char *event, ...)
+{
+    va_list ap;
+    va_start(ap, event);
+    vemit(now_s(), event, ap);
+    va_end(ap);
+}
+
+/* The same, stamped when the event was posted rather than when it is handled,
+ * so that the log's times do not depend on how busy the main thread is. */
+static void emit_at(double t, const char *event, ...)
+{
+    va_list ap;
+    va_start(ap, event);
+    vemit(t, event, ap);
+    va_end(ap);
 }
 
 #define I(k, v) "i:" k, (long long)(v)
@@ -164,6 +182,33 @@ static void emit(const char *event, ...)
 #define B(k, v) "b:" k, (int)(v)
 #define S(k, v) "s:" k, (const char *)(v)
 #define R(k, v) "r:" k, (const char *)(v)
+
+static void put16(uint8_t *p, unsigned v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
+static void put32(uint8_t *p, uint32_t v) { put16(p, v & 0xFFFFu); put16(p + 2, v >> 16); }
+
+/* --record-turns: writes mono PCM16 as DIR/name. */
+static void record_wav(const char *name, const int16_t *pcm, size_t n, int rate)
+{
+    char path[4096];
+    snprintf(path, sizeof path, "%s/%s", g_o.record_dir, name);
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        perror(path);
+        return;
+    }
+    uint8_t h[44];
+    memcpy(h, "RIFF", 4); put32(h + 4, (uint32_t)(36 + 2 * n)); memcpy(h + 8, "WAVEfmt ", 8);
+    put32(h + 16, 16); put16(h + 20, 1); put16(h + 22, 1); put32(h + 24, (uint32_t)rate);
+    put32(h + 28, (uint32_t)rate * 2); put16(h + 32, 2); put16(h + 34, 16);
+    memcpy(h + 36, "data", 4); put32(h + 40, (uint32_t)(2 * n));
+    int ok = fwrite(h, 1, sizeof h, f) == sizeof h;
+    for (size_t i = 0; ok && i < n; i++) {
+        uint8_t b[2];
+        put16(b, (uint16_t)pcm[i]);
+        ok = fwrite(b, 1, 2, f) == 2;
+    }
+    if (fclose(f) || !ok) perror(path);
+}
 
 /* A line for people, on stdout, stamped with seconds since start. */
 static void say(const char *fmt, ...)
@@ -286,7 +331,7 @@ static void on_warmup(void *ud)
 static void on_prediction(void *ud, const saa_prediction_ev_t *p)
 {
     (void)ud;
-    emit("prediction", I("cls", p->cls), F("confidence", p->confidence),
+    emit("prediction", I("cls", p->cls), I("raw_cls", p->raw_cls), F("confidence", p->confidence),
          S("source", saa_pred_source_name(p->source)), I("num_faces", p->num_faces),
          B("responding", p->responding), NULL);
 }
@@ -617,22 +662,25 @@ static void print_due_lines(int all)
     }
 }
 
-/* Marks the device as responding, around playback. The SDK examples also mute
- * here, so the device's own voice stays out of the next turn; this example
- * leaves that to the responding flag and the speaker's echo cancelling. To
- * mute as well, uncomment the two calls below. */
+/* Marks the device as responding, around playback. How much more the device
+ * does about its own voice depends on how well the hardware cancels it:
+ *  - it cancels it: responding alone, the default; anyone can interrupt;
+ *  - it leaks some: --mute-while-talking also mutes, so that what leaks stays
+ *    out of the next turn, and the model never answers its own words;
+ *  - it cancels none: add --barge-in off, and the device finishes what it
+ *    says, since SAA would take its voice for someone interrupting. */
 static void set_responding(int on, const turn_t *t)
 {
     if (on == A.responding) return;
     A.responding = on;
     if (on) {
         saa_client_responding_start(g_client);
-        /* saa_client_mute(g_client); */
+        if (g_o.mute_talking) saa_client_mute(g_client);
     } else {
         saa_client_responding_stop(g_client);
-        /* saa_client_unmute(g_client); */
+        if (g_o.mute_talking) saa_client_unmute(g_client);
     }
-    emit(on ? "responding_start" : "responding_stop", I("turn", t ? t->no : 0), NULL);
+    emit(on ? "responding_start" : "responding_stop", I("turn", t ? t->no : 0), B("muted", g_o.mute_talking), NULL);
 }
 
 /* ── client events for Realtime ────────────────────────────────────── */
@@ -844,7 +892,7 @@ static void on_new_turn(turn_t *t, int16_t **pcm, size_t n, const char *instruct
         send_turn(t, *pcm, n, instructions);
         break;
     case P_PLAYING:
-        stop_playback(TURN_FADE_MS, "a newer turn");
+        if (g_o.barge_in) stop_playback(TURN_FADE_MS, "a newer turn");   /* off: it waits for the end */
         hold_turn(t, *pcm, n, instructions);
         *pcm = NULL;
         break;
@@ -869,14 +917,14 @@ static void handle_rt(qev_t *e)
     rt_event_t *ev = &e->rt;
     switch (ev->type) {
     case RT_EV_OPEN:
-        emit("rt_open", NULL);
+        emit_at(e->t, "rt_open", NULL);
         say(A.rt_opens++ ? "Realtime reconnected; the model's history starts over" : "Realtime connected");
         break;
     case RT_EV_READY:
-        emit("rt_ready", NULL);
+        emit_at(e->t, "rt_ready", NULL);
         break;
     case RT_EV_DOWN:
-        emit("rt_down", I("code", ev->code), S("reason", ev->text), I("retry_ms", ev->retry_ms), NULL);
+        emit_at(e->t, "rt_down", I("code", ev->code), S("reason", ev->text), I("retry_ms", ev->retry_ms), NULL);
         say("Realtime closed (%d %s); %s %.1f s", ev->code, ev->text ? ev->text : "",
             ev->retry_ms ? "retrying in" : "reconnecting now", ev->retry_ms / 1000.0);
         A.n_awaiting = A.n_committing = 0;
@@ -888,7 +936,7 @@ static void handle_rt(qev_t *e)
         }
         break;
     case RT_EV_FATAL:
-        emit("rt_fatal", I("code", ev->code), S("reason", ev->text), NULL);
+        emit_at(e->t, "rt_fatal", I("code", ev->code), S("reason", ev->text), NULL);
         if (ev->code) say("OpenAI refused the connection (HTTP %d); check OPENAI_API_KEY", ev->code);
         else say("Realtime client failed: %s", ev->text ? ev->text : "?");
         A.exit_code = ev->code ? EXIT_AUTH : EXIT_TRANSPORT;
@@ -898,14 +946,14 @@ static void handle_rt(qev_t *e)
         int no = A.n_committing ? A.committing[0] : 0;
         take_from(A.committing, &A.n_committing, no);
         turn_t *t = no ? find_turn_no(no) : NULL;
-        emit("committed", I("turn", no), S("item_id", ev->item_id), NULL);
+        emit_at(e->t, "committed", I("turn", no), S("item_id", ev->item_id), NULL);
         if (t) snprintf(t->item_id, sizeof t->item_id, "%s", ev->item_id ? ev->item_id : "");
         break;
     }
     case RT_EV_RESPONSE_CREATED: {
         int no = ev->tag ? atoi(ev->tag) : (A.n_awaiting ? A.awaiting[0] : 0);
         take_from(A.awaiting, &A.n_awaiting, no);     /* with any created before it */
-        emit("response_created", I("turn", no), S("response_id", ev->response_id), NULL);
+        emit_at(e->t, "response_created", I("turn", no), S("response_id", ev->response_id), NULL);
         if (A.cur && A.cur->no == no && A.phase == P_GENERATING && !A.cur->resp_id[0]) {
             snprintf(A.cur->resp_id, sizeof A.cur->resp_id, "%s", ev->response_id ? ev->response_id : "");
             A.cur->t_created = e->t;
@@ -914,7 +962,7 @@ static void handle_rt(qev_t *e)
     }
     case RT_EV_AUDIO_DONE: {
         turn_t *t = A.cur;
-        emit("reply_audio", I("turn", t ? t->no : 0), S("response_id", ev->response_id),
+        emit_at(e->t, "reply_audio", I("turn", t ? t->no : 0), S("response_id", ev->response_id),
              I("samples", e->samples), NULL);
         if (!t || A.phase != P_GENERATING || !ev->response_id || strcmp(ev->response_id, t->resp_id)) break;
         t->t_audio = e->t;
@@ -922,6 +970,11 @@ static void handle_rt(qev_t *e)
         snprintf(t->reply_item, sizeof t->reply_item, "%s", ev->item_id ? ev->item_id : "");
         t->content_index = ev->content_index;
         if (!e->samples) break;                        /* response.done will say why */
+        if (g_o.record_dir) {                          /* the reply as it came, before the gain */
+            char wav[32];
+            snprintf(wav, sizeof wav, "%04d_reply.wav", t->no);
+            record_wav(wav, e->pcm, e->samples, 24000);
+        }
         if (pb_play(g_pb, ++A.reply_no, e->pcm, e->samples)) {
             A.cur = NULL;
             A.phase = P_IDLE;
@@ -944,13 +997,13 @@ static void handle_rt(qev_t *e)
     }
     case RT_EV_INPUT_TRANSCRIPT: {
         turn_t *t = find_turn(NULL, ev->item_id);
-        emit("heard", I("turn", t ? t->no : 0), S("item_id", ev->item_id), S("text", ev->text), NULL);
+        emit_at(e->t, "heard", I("turn", t ? t->no : 0), S("item_id", ev->item_id), S("text", ev->text), NULL);
         if (t) set_str(&t->heard, ev->text);
         break;
     }
     case RT_EV_RESPONSE_DONE: {
         turn_t *t = find_turn(ev->response_id, NULL);
-        emit("response_done", I("turn", t ? t->no : 0), S("response_id", ev->response_id), S("status", ev->status),
+        emit_at(e->t, "response_done", I("turn", t ? t->no : 0), S("response_id", ev->response_id), S("status", ev->status),
              S("why", ev->text), R("usage", ev->json), NULL);
         if (!t) break;
         set_str(&t->status, ev->status);
@@ -964,7 +1017,7 @@ static void handle_rt(qev_t *e)
         break;
     }
     case RT_EV_ERROR: {
-        emit("rt_error", S("code", ev->code_name), S("message", ev->text), S("event_id", ev->event_id), NULL);
+        emit_at(e->t, "rt_error", S("code", ev->code_name), S("message", ev->text), S("event_id", ev->event_id), NULL);
         say("Realtime error %s: %s", ev->code_name ? ev->code_name : "", ev->text ? ev->text : "");
         /* A refused commit or response.create means no reply for that turn. The
          * response.create queued behind a refused commit would answer the old
@@ -1001,10 +1054,10 @@ static void handle_pb(qev_t *e)
     int turn_no = ev->reply == A.reply_no ? A.reply_turn : 0;   /* its turn may have finished already */
     switch (ev->type) {
     case PB_EV_STARTED:
-        emit("playback_start", I("turn", turn_no), I("reply", ev->reply), I("length_ms", ev->length_ms), NULL);
+        emit_at(e->t, "playback_start", I("turn", turn_no), I("reply", ev->reply), I("length_ms", ev->length_ms), NULL);
         break;
     case PB_EV_STOPPING:
-        emit("playback_stopping", I("turn", turn_no), I("played_ms", ev->played_ms), I("length_ms", ev->length_ms),
+        emit_at(e->t, "playback_stopping", I("turn", turn_no), I("played_ms", ev->played_ms), I("length_ms", ev->length_ms),
              NULL);
         if (!ours || A.phase != P_STOPPING) break;
         t->played_ms = ev->played_ms;
@@ -1015,14 +1068,19 @@ static void handle_pb(qev_t *e)
         send_held();
         break;
     case PB_EV_DONE:
-        emit("playback_end", I("turn", turn_no), I("played_ms", ev->played_ms), I("length_ms", ev->length_ms),
+        emit_at(e->t, "playback_end", I("turn", turn_no), I("played_ms", ev->played_ms), I("length_ms", ev->length_ms),
              B("interrupted", ev->interrupted), NULL);
         if (!ours || ev->interrupted) break;
         t->played_ms = ev->played_ms;
         if (A.phase == P_PLAYING) {                /* heard to the end: the tail, then stop responding */
             t->t_end = e->t;
-            A.phase = P_TAIL;
-            A.tail_until = e->t + g_o.tail_ms / 1000.0;
+            if (A.held) {                          /* a turn waited for it (--barge-in off) */
+                end_tail();
+                send_held();
+            } else {
+                A.phase = P_TAIL;
+                A.tail_until = e->t + g_o.tail_ms / 1000.0;
+            }
         } else if (A.phase == P_STOPPING) {        /* the fade came after the end: all of it was heard */
             A.cur = NULL;
             A.phase = P_IDLE;
@@ -1031,11 +1089,11 @@ static void handle_pb(qev_t *e)
         }
         break;
     case PB_EV_ERROR:
-        emit("speaker_error", S("text", ev->text), NULL);
+        emit_at(e->t, "speaker_error", S("text", ev->text), NULL);
         say("speaker: %s", ev->text ? ev->text : "");
         break;
     case PB_EV_RECOVERED:
-        emit("speaker_back", S("device", ev->text), NULL);
+        emit_at(e->t, "speaker_back", S("device", ev->text), NULL);
         say("speaker %s is back", ev->text ? ev->text : "");
         break;
     }
@@ -1054,8 +1112,13 @@ static void handle(qev_t *e)
     case Q_TURN: {
         turn_t *t = new_turn(K_TURN, e->t, e->duration);
         if (!t) break;
-        emit("turn_ready", I("turn", t->no), I("samples", e->samples), F("duration_sec", e->duration),
-             S("context", e->context), S("phase", phase_names[A.phase]), NULL);
+        char wav[32] = "";
+        if (g_o.record_dir) {                          /* what SAA sent, as the model will hear it */
+            snprintf(wav, sizeof wav, "%04d_turn.wav", t->no);
+            record_wav(wav, e->pcm, e->samples, 16000);
+        }
+        emit_at(e->t, "turn_ready", I("turn", t->no), I("samples", e->samples), F("duration_sec", e->duration),
+             S("context", e->context), S("phase", phase_names[A.phase]), S("wav", *wav ? wav : NULL), NULL);
         const char *instr = g_o.interjections && e->context && !strcmp(e->context, "interjection_follow_up")
                                 ? FOLLOWUP_INSTRUCTIONS : NULL;
         on_new_turn(t, &e->pcm, e->samples, instr);
@@ -1069,12 +1132,22 @@ static void handle(qev_t *e)
         turn_t *t = new_turn(K_INTERJECTION, e->t, e->duration);
         if (!t) break;
         set_str(&t->reason, e->context);
+        if (g_o.record_dir) {
+            char wav[40];
+            snprintf(wav, sizeof wav, "%04d_interjection.wav", t->no);
+            record_wav(wav, e->pcm, e->samples, 16000);
+        }
         send_turn(t, e->pcm, e->samples, INTERJECTION_INSTRUCTIONS);
         break;
     }
     case Q_INTERRUPT:
-        emit("interrupt", I("fade_ms", e->fade_ms), F("confidence", e->confidence),
-             S("phase", phase_names[A.phase]), NULL);
+        emit_at(e->t, "interrupt", I("fade_ms", e->fade_ms), F("confidence", e->confidence),
+             S("phase", phase_names[A.phase]), B("ignored", !g_o.barge_in), NULL);
+        if (!g_o.barge_in) {
+            if (A.phase == P_PLAYING || A.phase == P_TAIL)
+                say("interrupt ignored (--barge-in off): confidence %.2f", e->confidence);
+            break;
+        }
         A.last_fade_ms = e->fade_ms;
         if (A.phase == P_PLAYING) stop_playback(e->fade_ms, "interrupted");
         else if (A.phase == P_TAIL) end_tail();                    /* all of it was heard */
@@ -1253,6 +1326,10 @@ static void usage(FILE *to, const char *argv0)
         "  --speaker DEV      an ALSA device (default \"default\"), or file:PATH for a WAV\n"
         "  --gain-db DB       playback gain, -30 to +20 (default +6)\n"
         "  --tail-ms MS       responding stays on this long after playback (default 300)\n"
+        "  --mute-while-talking  also mute SAA while the device talks, so what the\n"
+        "                     microphone hears of it stays out of the next turn\n"
+        "  --barge-in on|off  whether an interrupt stops the reply (default on); off\n"
+        "                     for a speaker the microphone hears with no echo cancelling\n"
         "  --model NAME       the Realtime model (default %s)\n"
         "  --voice NAME       its voice (default sage)\n"
         "  --reasoning EFFORT its reasoning effort (default minimal; \"\" leaves it out)\n"
@@ -1265,11 +1342,12 @@ static void usage(FILE *to, const char *argv0)
         "  --openai-url URL   the Realtime endpoint (default %s)\n"
         "  --ca FILE          a CA bundle for both services\n"
         "  --events FILE      every event as a JSON line\n"
+        "  --record-turns DIR each turn as DIR/NNNN_turn.wav, each reply as NNNN_reply.wav\n"
         "  --duration S       stop after S seconds\n"
         "  --help, --version\n"
         "SIGINT or SIGTERM stops cleanly\n"
         "exit: 0 clean, 2 a key was refused, 3 rate limited or no capacity, 4 transport,\n"
-        "      5 arguments, 6 a device did not open\n",
+        "      5 arguments, 6 the microphone or the speaker did not open\n",
         argv0, DEFAULT_MODEL, SAA_CLIENT_DEFAULT_URL, DEFAULT_OPENAI);
 }
 
@@ -1298,6 +1376,7 @@ static int parse_args(int argc, char **argv)
     g_o.gain_db = 6.0;
     g_o.tail_ms = 300.0;
     g_o.threshold = 0.7;
+    g_o.barge_in = 1;
     const char *instructions = DEFAULT_INSTRUCTIONS;
     for (int i = 1; i < argc; i++) {
         const char *k = argv[i], *v = i + 1 < argc ? argv[i + 1] : NULL;
@@ -1315,6 +1394,14 @@ static int parse_args(int argc, char **argv)
         else if (ARG("--threshold"))    g_o.threshold = atof(v);
         else if (ARG("--duration"))     g_o.duration_s = atof(v);
         else if (ARG("--events"))       g_o.events_path = v;
+        else if (ARG("--record-turns")) g_o.record_dir = v;
+        else if (ARG("--barge-in")) {
+            if (strcmp(v, "on") && strcmp(v, "off")) {
+                fprintf(stderr, "--barge-in takes on or off\n");
+                return -1;
+            }
+            g_o.barge_in = !strcmp(v, "on");
+        }
         else if (ARG("--ca"))           g_o.ca_file = v;
         else if (ARG("--wav"))          g_o.wav_path = v;
         else if (ARG("--alsa"))         g_o.alsa = v;
@@ -1329,6 +1416,7 @@ static int parse_args(int argc, char **argv)
             }
         }
         else if (!strcmp(k, "--interjections")) g_o.interjections = 1;
+        else if (!strcmp(k, "--mute-while-talking")) g_o.mute_talking = 1;
         else if (!strcmp(k, "--utterance"))     g_o.utterance = 1;
         else if (!strcmp(k, "--help"))          { usage(stdout, argv[0]); exit(EXIT_OK); }
         else if (!strcmp(k, "--version"))       { printf("saa_voice_agent %s\n", saa_client_version()); exit(EXIT_OK); }
@@ -1408,6 +1496,10 @@ int main(int argc, char **argv)
         perror(g_o.events_path);
         return EXIT_ARGS;
     }
+    if (g_o.record_dir && mkdir(g_o.record_dir, 0755) && errno != EEXIST) {
+        perror(g_o.record_dir);
+        return EXIT_ARGS;
+    }
     g_t0 = now_s();
     struct sigaction sa;
     memset(&sa, 0, sizeof sa);
@@ -1475,10 +1567,17 @@ int main(int argc, char **argv)
         return EXIT_ARGS;
     }
 
-    emit("agent_start", I("schema", JSONL_SCHEMA), S("version", saa_client_version()), F("mono_t0", g_t0),
+    char t0[32];                                          /* all its digits: %.6g would round it */
+    snprintf(t0, sizeof t0, "%.6f", g_t0);
+    emit("agent_start", I("schema", JSONL_SCHEMA), S("version", saa_client_version()), R("mono_t0", t0),
          S("wav", g_o.wav_path), S("alsa", g_o.alsa), S("v4l2", g_o.v4l2), S("mjpeg", g_o.mjpeg),
          S("speaker", pb_describe(g_pb)), I("speaker_rate", pb_rate(g_pb)), I("speaker_channels", pb_channels(g_pb)),
-         S("openai_url", url), S("voice", g_o.voice), F("tail_ms", g_o.tail_ms), F("gain_db", g_o.gain_db), NULL);
+         S("openai_url", url), S("voice", g_o.voice), F("tail_ms", g_o.tail_ms), F("gain_db", g_o.gain_db),
+         B("mute_while_talking", g_o.mute_talking), B("barge_in", g_o.barge_in), S("record_dir", g_o.record_dir),
+         NULL);
+    if (g_o.mute_talking || !g_o.barge_in)
+        say("echo handling: %s%s", g_o.mute_talking ? "muted while talking" : "",
+            g_o.barge_in ? "" : g_o.mute_talking ? ", no barge-in" : "no barge-in");
     say("speaker: %s", pb_describe(g_pb));
     free(url);
     rt_start(g_rt);                                       /* connects while SAA starts */
