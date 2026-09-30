@@ -59,6 +59,7 @@
 #define REPLY_TIMEOUT_S   60.0    /* a turn with no reply by then is given up */
 #define LINE_WAIT_S       2.0     /* how long a turn's line waits for what the model heard */
 #define RECYCLE_AFTER_MS  (50LL * 60 * 1000)   /* Realtime sessions end at 60 minutes */
+#define ECHO_TURN_S       3.0     /* --barge-in off: an ignored interrupt's own turn arrives within this */
 #define APPEND_SAMPLES    (24000 * 5)   /* audio per input_audio_buffer.append */
 
 #define DEFAULT_INSTRUCTIONS \
@@ -509,8 +510,9 @@ static struct {
     int      awaiting[32], n_awaiting;   /* turns whose response.created is due, in order */
     int      committing[32], n_committing;   /* turns whose input_audio_buffer.committed is due */
     double   tail_until, reply_deadline, stop_deadline, recycled_at;
+    double   echo_until;          /* --barge-in off: a turn before this is SAA's from an ignored interrupt */
     int      rt_opens, exit_code, done;
-    int      played, interrupted, cancelled, lost;
+    int      played, interrupted, cancelled, lost, dropped;
 } A;
 
 static turn_t *new_turn(kind_t kind, double t_ready, double dur_s)
@@ -601,7 +603,8 @@ static void finish(turn_t *t, outcome_t outcome, const char *why)
     if (outcome == O_PLAYED) A.played++;
     else if (outcome == O_INTERRUPTED) A.interrupted++;
     else if (outcome == O_CANCELLED) A.cancelled++;
-    else if (outcome == O_LOST || outcome == O_DROPPED) A.lost++;
+    else if (outcome == O_LOST) A.lost++;
+    else if (outcome == O_DROPPED) A.dropped++;
     if (t->heard || !t->has_audio || outcome == O_DROPPED) {
         print_line(t);
         free_turn(t);
@@ -668,7 +671,11 @@ static void print_due_lines(int all)
  *  - it leaks some: --mute-while-talking also mutes, so that what leaks stays
  *    out of the next turn, and the model never answers its own words;
  *  - it cancels none: add --barge-in off, and the device finishes what it
- *    says, since SAA would take its voice for someone interrupting. */
+ *    says, since SAA would take its voice for someone interrupting. An
+ *    interrupt is then ignored, and SAA is told again that the device is
+ *    talking, since its interrupt clears that on its side. The turn SAA makes
+ *    from its interrupt, and any turn that arrives while the device talks, is
+ *    the device's own voice, and is dropped. */
 static void set_responding(int on, const turn_t *t)
 {
     if (on == A.responding) return;
@@ -681,6 +688,16 @@ static void set_responding(int on, const turn_t *t)
         if (g_o.mute_talking) saa_client_unmute(g_client);
     }
     emit(on ? "responding_start" : "responding_stop", I("turn", t ? t->no : 0), B("muted", g_o.mute_talking), NULL);
+}
+
+/* An ignored interrupt (--barge-in off): SAA has cleared the responding flag on
+ * its side, and taken the device's voice for someone speaking, so it is told
+ * again. saa-c sends each call, even when its own state is unchanged. */
+static void reassert_talking(const turn_t *t)
+{
+    saa_client_responding_start(g_client);
+    if (g_o.mute_talking) saa_client_mute(g_client);
+    emit("responding_start", I("turn", t ? t->no : 0), B("muted", g_o.mute_talking), B("again", 1), NULL);
 }
 
 /* ── client events for Realtime ────────────────────────────────────── */
@@ -886,13 +903,20 @@ static void send_held(void)
  * the last one gives way first. pcm is the caller's until it is held. */
 static void on_new_turn(turn_t *t, int16_t **pcm, size_t n, const char *instructions)
 {
+    if (!g_o.barge_in && (A.phase == P_PLAYING || A.phase == P_TAIL || now_s() < A.echo_until)) {
+        A.echo_until = 0;                  /* only the first after an ignored interrupt */
+        finish(t, O_DROPPED, A.phase == P_PLAYING || A.phase == P_TAIL
+                                 ? "it arrived while the device talked, so it is the device's own voice"
+                                 : "SAA made it from the device's voice, in the interrupt it sent");
+        return;
+    }
     switch (A.phase) {
     case P_GENERATING:
         cancel_reply("a newer turn arrived first");
         send_turn(t, *pcm, n, instructions);
         break;
     case P_PLAYING:
-        if (g_o.barge_in) stop_playback(TURN_FADE_MS, "a newer turn");   /* off: it waits for the end */
+        stop_playback(TURN_FADE_MS, "a newer turn");
         hold_turn(t, *pcm, n, instructions);
         *pcm = NULL;
         break;
@@ -1074,13 +1098,8 @@ static void handle_pb(qev_t *e)
         t->played_ms = ev->played_ms;
         if (A.phase == P_PLAYING) {                /* heard to the end: the tail, then stop responding */
             t->t_end = e->t;
-            if (A.held) {                          /* a turn waited for it (--barge-in off) */
-                end_tail();
-                send_held();
-            } else {
-                A.phase = P_TAIL;
-                A.tail_until = e->t + g_o.tail_ms / 1000.0;
-            }
+            A.phase = P_TAIL;
+            A.tail_until = e->t + g_o.tail_ms / 1000.0;
         } else if (A.phase == P_STOPPING) {        /* the fade came after the end: all of it was heard */
             A.cur = NULL;
             A.phase = P_IDLE;
@@ -1144,8 +1163,12 @@ static void handle(qev_t *e)
         emit_at(e->t, "interrupt", I("fade_ms", e->fade_ms), F("confidence", e->confidence),
              S("phase", phase_names[A.phase]), B("ignored", !g_o.barge_in), NULL);
         if (!g_o.barge_in) {
-            if (A.phase == P_PLAYING || A.phase == P_TAIL)
-                say("interrupt ignored (--barge-in off): confidence %.2f", e->confidence);
+            if (A.phase == P_PLAYING || A.phase == P_TAIL) {
+                say("interrupt ignored (--barge-in off), confidence %.2f; SAA told again the device is talking",
+                    e->confidence);
+                reassert_talking(A.cur);
+                A.echo_until = e->t + ECHO_TURN_S;
+            }
             break;
         }
         A.last_fade_ms = e->fade_ms;
@@ -1650,10 +1673,11 @@ int main(int argc, char **argv)
     double cpu_s = (double)ru.ru_utime.tv_sec + ru.ru_utime.tv_usec / 1e6 + (double)ru.ru_stime.tv_sec +
                    ru.ru_stime.tv_usec / 1e6;
     emit("summary", I("exit_code", A.exit_code), I("turns", A.next_no), I("played", A.played),
-         I("interrupted", A.interrupted), I("cancelled", A.cancelled), I("lost", A.lost), I("errors", g_errors),
+         I("interrupted", A.interrupted), I("cancelled", A.cancelled), I("lost", A.lost), I("dropped", A.dropped),
+         I("errors", g_errors),
          I("signal", g_signal), F("cpu_s", cpu_s), F("wall_s", now_s() - g_t0), NULL);
-    say("done: %d turns, %d played, %d interrupted, %d cancelled, %d lost", A.next_no, A.played, A.interrupted,
-        A.cancelled, A.lost);
+    say("done: %d turns, %d played, %d interrupted, %d cancelled, %d lost, %d dropped", A.next_no, A.played,
+        A.interrupted, A.cancelled, A.lost, A.dropped);
     rt_destroy(g_rt);
     saa_client_destroy(g_client);
     wav_close(&m.wav);
