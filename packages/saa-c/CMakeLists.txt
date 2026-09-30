@@ -193,7 +193,8 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/saaclientConfig.cmake
 
 # ── demo ──────────────────────────────────────────────────────────────────
 if(SAA_BUILD_DEMO)
-  add_executable(saa_client_demo examples/demo/main.c examples/demo/mjpeg_split.c)
+  add_executable(saa_client_demo examples/demo/main.c examples/demo/mjpeg_split.c
+    examples/demo/wav_reader.c)
   target_link_libraries(saa_client_demo PRIVATE saaclient Threads::Threads m)
   target_compile_definitions(saa_client_demo PRIVATE _POSIX_C_SOURCE=200809L
     $<$<PLATFORM_ID:Darwin>:_DARWIN_C_SOURCE>)
@@ -225,6 +226,36 @@ if(SAA_BUILD_DEMO)
     set_target_properties(saa_minimal_cpp PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
     target_link_libraries(saa_minimal_cpp PRIVATE saaclient)
     target_compile_options(saa_minimal_cpp PRIVATE ${SAA_WARNINGS})
+  endif()
+endif()
+
+# The voice agent: SAA's turns to OpenAI Realtime, and the reply to a speaker
+# (not installed). It talks to Realtime through lws itself, and compiles the
+# vendored cJSON and base64 into its own objects, so the archive's copies are
+# never pulled. The ALSA speaker is built where ALSA is; the file speaker, which
+# the test uses, everywhere.
+if(SAA_BUILD_DEMO)
+  add_executable(saa_voice_agent
+    examples/voice_agent/main.c examples/voice_agent/realtime.c
+    examples/voice_agent/playback.c examples/voice_agent/resample.c
+    examples/demo/wav_reader.c examples/demo/mjpeg_split.c
+    third_party/cJSON/cJSON.c third_party/base64/base64.c)
+  target_include_directories(saa_voice_agent PRIVATE examples/demo third_party/cJSON third_party/base64)
+  target_link_libraries(saa_voice_agent PRIVATE saaclient PkgConfig::SAAC_LWS Threads::Threads m)
+  target_compile_definitions(saa_voice_agent PRIVATE _POSIX_C_SOURCE=200809L
+    $<$<PLATFORM_ID:Darwin>:_DARWIN_C_SOURCE>)
+  target_compile_options(saa_voice_agent PRIVATE ${SAA_WARNINGS})
+  if(OpenSSL_FOUND)
+    target_include_directories(saa_voice_agent PRIVATE ${OPENSSL_INCLUDE_DIR})
+  endif()
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    pkg_check_modules(SAAC_VA_ALSA QUIET IMPORTED_TARGET alsa)
+    if(SAAC_VA_ALSA_FOUND)
+      target_link_libraries(saa_voice_agent PRIVATE PkgConfig::SAAC_VA_ALSA)
+      target_compile_definitions(saa_voice_agent PRIVATE VA_WITH_ALSA)
+    else()
+      message(STATUS "saa_voice_agent: no ALSA, so only the file speaker")
+    endif()
   endif()
 endif()
 
