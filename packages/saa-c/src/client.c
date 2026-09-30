@@ -19,6 +19,7 @@
 #include "atomic.h"
 #include "audio_intake.h"
 #include "backoff.h"
+#include "capture.h"
 #include "clock.h"
 #include "log.h"
 #include "protocol.h"
@@ -37,6 +38,7 @@
 #define CLOSE_GRACE_MS   1000
 #define VIDEO_MAX_AGE_US 1000000
 #define CTL_CAP          64
+#define CAPTURE_RETRY_MS 2000
 
 #if defined(__APPLE__)
 #  define OS_NAME "macos"
@@ -90,6 +92,7 @@ struct saa_client {
     saac_audio_intake_t      *ai;
     saac_video_intake_t      *vi;
     saac_resolver_t          *res;
+    saac_capture_t           *cap;          /* NULL unless the client captures itself */
 
     /* start/stop, host threads only */
     pthread_mutex_t           life_mu;
@@ -116,6 +119,7 @@ struct saa_client {
 
     /* service thread only */
     phase_t                   phase;
+    saa_video_mode_t          video_eff;      /* video_mode, or NONE when the camera would not open */
     uint32_t                  gen;            /* attempt generation, for lookups */
     int                       ever_opened, attempts, reconnects, backoff_k;
     int                       last_code, deadline_hit;
@@ -169,6 +173,7 @@ static void emit_error(saa_client_t *c, saa_error_kind_t kind, const char *title
 
 static saa_client_rc_t rc_for(saa_error_kind_t kind, int code)
 {
+    if (kind == SAA_ERR_AUDIO) return SAA_CLIENT_ERR_DEVICE;
     if (kind == SAA_ERR_AUTH) return SAA_CLIENT_ERR_AUTH;
     if (kind == SAA_ERR_RATE_LIMIT || code == 503 || code == 1013) return SAA_CLIENT_ERR_BUSY;
     return SAA_CLIENT_ERR_TRANSPORT;
@@ -244,6 +249,7 @@ static void finish(saa_client_t *c)
 {
     saac_store_release(&c->active, 0);   /* feed and control calls return SAA_CLIENT_ERR_STATE now */
     c->phase = PH_DONE;
+    saac_capture_signal_stop(c->cap);    /* stop() joins the capture threads */
     for (int i = 0; i < SAAC_TIMER__COUNT; i++) saac_tp_timer_cancel(c->tp, i);
     saac_res_cancel(c->res);
     saac_tp_quit(c->tp);
@@ -327,7 +333,7 @@ static void do_allocate(saa_client_t *c)
 {
     char path[sizeof c->url.path + 16];
     size_t body_len = 0;
-    char *body = saac_proto_allocate_body(saac_profile_effective(c->profile, c->video_mode),
+    char *body = saac_proto_allocate_body(saac_profile_effective(c->profile, c->video_eff),
                                           c->utterance, &body_len);
     if (saac_url_allocate_path(&c->url, path, sizeof path)) {
         saac_proto_free(body);
@@ -383,7 +389,7 @@ static void attempt_begin(saa_client_t *c)
         return;
     }
     c->target = c->url;
-    if (saac_url_apply_direct_query(&c->target, c->profile, c->video_mode, c->utterance)) {
+    if (saac_url_apply_direct_query(&c->target, c->profile, c->video_eff, c->utterance)) {
         fail_terminal(c, SAA_ERR_CONFIG, "Invalid URL", "URL too long after adding its query",
                       NULL, 0, 0);
         return;
@@ -531,10 +537,56 @@ static void stall_check(saa_client_t *c)
 
 /* ── service thread: transport events ──────────────────────────────── */
 
+/* Opens the capture devices, before the first allocate. Returns -1 when the
+ * session cannot run (no microphone). */
+static int capture_begin(saa_client_t *c)
+{
+    char err[192], verr[192];
+    int video_ok = 1;
+    err[0] = verr[0] = '\0';
+    if (saac_capture_start(c->cap, &video_ok, err, sizeof err, verr, sizeof verr)) {
+        fail_terminal(c, SAA_ERR_AUDIO, "Audio Device Failed", err, NULL, 0, 0);
+        return -1;
+    }
+    if (c->video_mode == SAA_VIDEO_CAPTURE && !video_ok) {
+        /* no camera: audio only, and so the audio_only profile when it is inferred */
+        emit_error(c, SAA_ERR_ENVIRONMENT, "Camera Unavailable", verr, NULL, 0, 0);
+        c->video_eff = SAA_VIDEO_NONE;
+    }
+    return 0;
+}
+
+/* Events from the capture threads, delivered here on the service thread. */
+static void capture_events(saa_client_t *c)
+{
+    char msg[192];
+    saac_cap_event_t e;
+    while ((e = saac_capture_poll(c->cap, msg, sizeof msg)) != SAAC_CAP_NONE) {
+        switch (e) {
+        case SAAC_CAP_AUDIO_LOST:
+            emit_error(c, SAA_ERR_AUDIO, "Audio Device Lost", msg, NULL, 0, 1);
+            break;
+        case SAAC_CAP_VIDEO_LOST:
+            emit_error(c, SAA_ERR_VIDEO, "Camera Lost", msg, NULL, 0, 1);
+            break;
+        case SAAC_CAP_AUDIO_BACK:
+            SAAC_LOGI("audio device back: %s", msg);
+            break;
+        case SAAC_CAP_VIDEO_BACK:
+            SAAC_LOGI("camera back: %s", msg);
+            break;
+        default:
+            break;
+        }
+    }
+}
+
 static void ev_start(void *core)
 {
     saa_client_t *c = core;
     if (saac_load_acquire(&c->stop_req)) { finish(c); return; }
+    c->video_eff = c->video_mode;
+    if (c->cap && capture_begin(c)) return;
     attempt_begin(c);
 }
 
@@ -542,6 +594,7 @@ static void ev_wake(void *core)
 {
     saa_client_t *c = core;
     if (saac_load_acquire(&c->stop_req)) { do_stop(c); return; }
+    if (c->cap && c->phase != PH_DONE) capture_events(c);
     if (c->phase == PH_RESOLVE_BROKER || c->phase == PH_RESOLVE_WS) {
         if (c->addrs.count || saac_res_poll(c->res, c->gen, &c->addrs)) resolved(c);
         return;
@@ -799,6 +852,11 @@ static void resolver_wake(void *ud)
     saac_tp_wake(((saa_client_t *)ud)->tp);
 }
 
+static int capture_accepting(void *ud)
+{
+    return saac_load_acquire(&((saa_client_t *)ud)->sock_open);
+}
+
 /* ── public API: lifecycle ─────────────────────────────────────────── */
 
 const char *saa_client_version(void)
@@ -808,6 +866,7 @@ const char *saa_client_version(void)
 
 static void free_client(saa_client_t *c)
 {
+    saac_capture_destroy(c->cap);
     saac_res_release(c->res);
     saac_tp_destroy(c->tp);
     saac_vi_destroy(c->vi);
@@ -826,8 +885,20 @@ saa_client_t *saa_client_create(const saa_client_config_t *cfg)
     if (cfg->server_profile && strcmp(cfg->server_profile, "default") &&
         !saac_profile_valid(cfg->server_profile))
         return NULL;
-    if (cfg->enable_audio || cfg->video_mode == SAA_VIDEO_CAPTURE) return NULL;  /* no capture module */
-    if (cfg->video_mode != SAA_VIDEO_NONE && cfg->video_mode != SAA_VIDEO_FEED) return NULL;
+    /* capture needs sources: the build's (SAA_WITH_CAPTURE), or a test's */
+    if (cfg->enable_audio && !saac_capture_audio) {
+        SAAC_LOGE("enable_audio needs a library built with SAA_WITH_CAPTURE");
+        return NULL;
+    }
+    if (cfg->video_mode == SAA_VIDEO_CAPTURE && !saac_capture_video) {
+        SAAC_LOGE("SAA_VIDEO_CAPTURE needs a library built with SAA_WITH_CAPTURE");
+        return NULL;
+    }
+    if (cfg->video_mode != SAA_VIDEO_NONE && cfg->video_mode != SAA_VIDEO_FEED &&
+        cfg->video_mode != SAA_VIDEO_CAPTURE)
+        return NULL;
+    if (cfg->audio_channel < 0 || cfg->camera_width < 0 || cfg->camera_height < 0 || cfg->camera_fps < 0)
+        return NULL;
 
     saa_client_t *c = calloc(1, sizeof *c);
     if (!c) return NULL;
@@ -865,6 +936,29 @@ saa_client_t *saa_client_create(const saa_client_config_t *cfg)
     c->vi = saac_vi_create(c->headroom);
     c->tp = saac_tp_create(&ev, c, &opts);
     c->res = saac_res_create(resolver_wake, c);
+    if (c->ai && c->vi && (cfg->enable_audio || cfg->video_mode == SAA_VIDEO_CAPTURE)) {
+        saac_capture_cfg_t cc;
+        memset(&cc, 0, sizeof cc);
+        cc.audio = cfg->enable_audio ? saac_capture_audio : NULL;
+        cc.video = cfg->video_mode == SAA_VIDEO_CAPTURE ? saac_capture_video : NULL;
+        cc.audio_device = cfg->audio_device;
+        cc.audio_channel = cfg->audio_channel;
+        cc.camera_device = cfg->camera_device;
+        cc.width = cfg->camera_width ? cfg->camera_width : 640;
+        cc.height = cfg->camera_height ? cfg->camera_height : 480;
+        cc.fps = cfg->camera_fps ? cfg->camera_fps : 4;
+        cc.retry_ms = CAPTURE_RETRY_MS;
+        cc.ai = c->ai;
+        cc.vi = c->vi;
+        cc.wake = resolver_wake;                           /* the same wakeup */
+        cc.accepting = capture_accepting;
+        cc.video_dropped = &c->vdrop_host;
+        cc.ud = c;
+        if (!(c->cap = saac_capture_create(&cc))) {
+            free_client(c);
+            return NULL;
+        }
+    }
     if (!c->token || !c->tx || !c->ai || !c->vi || !c->tp || !c->res) {
         free_client(c);
         return NULL;
@@ -962,6 +1056,7 @@ void saa_client_stop(saa_client_t *c)
         saac_tp_wake(c->tp);
         pthread_join(c->thread, NULL);       /* the service thread may take mu meanwhile */
         c->thread_valid = 0;
+        saac_capture_stop(c->cap);           /* signalled when the loop ended */
         saac_ai_request_reset(c->ai);
         saac_ai_flush(c->ai);
         saac_vi_clear(c->vi);
@@ -1112,6 +1207,11 @@ saa_state_t saa_client_state(const saa_client_t *c)
 int saa_client_is_connected(const saa_client_t *c)
 {
     return c ? saac_load_acquire(&((saa_client_t *)c)->sock_open) : 0;
+}
+
+int saa_client_is_active(const saa_client_t *c)
+{
+    return c ? saac_load_acquire(&((saa_client_t *)c)->active) : 0;
 }
 
 float saa_client_threshold(const saa_client_t *c)
