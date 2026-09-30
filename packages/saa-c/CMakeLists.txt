@@ -20,9 +20,6 @@ option(SAA_WERROR             "Treat warnings in saa-c's own sources as errors" 
 option(SAA_REQUIRE_MOCK_TESTS "Fail the configure if the mock-server tests cannot run" OFF)
 set(SAA_SANITIZE "" CACHE STRING "Sanitizer for saa-c's own code: address, undefined, thread, or empty")
 
-if(SAA_WITH_CAPTURE)
-  message(FATAL_ERROR "SAA_WITH_CAPTURE: the capture module is not implemented yet")
-endif()
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -52,6 +49,20 @@ if(APPLE AND NOT OPENSSL_ROOT_DIR AND EXISTS /opt/homebrew/opt/openssl@3)
   set(OPENSSL_ROOT_DIR /opt/homebrew/opt/openssl@3)
 endif()
 find_package(OpenSSL)
+
+# The capture sources: a microphone through ALSA, a camera through V4L2.
+if(SAA_WITH_CAPTURE)
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "SAA_WITH_CAPTURE needs Linux: its sources are ALSA and V4L2")
+  endif()
+  pkg_check_modules(SAAC_ALSA REQUIRED IMPORTED_TARGET alsa)
+  include(CheckIncludeFile)
+  check_include_file(linux/videodev2.h SAA_HAVE_VIDEODEV2)
+  if(NOT SAA_HAVE_VIDEODEV2)
+    message(FATAL_ERROR "SAA_WITH_CAPTURE needs linux/videodev2.h, from the kernel headers")
+  endif()
+  message(STATUS "capture: ALSA ${SAAC_ALSA_VERSION}, V4L2")
+endif()
 
 # 32-bit atomics are builtins everywhere we build; link libatomic only if the
 # toolchain says otherwise.
@@ -85,14 +96,18 @@ set_source_files_properties(third_party/cJSON/cJSON.c PROPERTIES COMPILE_FLAGS "
 set(SAA_CLIENT_SOURCES
   src/audio_intake.c
   src/backoff.c
+  src/capture.c
   src/client.c
   src/clock.c
+  src/jpeg.c
   src/log.c
   src/protocol.c
   src/resolver.c
   src/transport_lws.c
   src/url.c
   src/video_intake.c
+  $<$<BOOL:${SAA_WITH_CAPTURE}>:src/capture/alsa_source.c>
+  $<$<BOOL:${SAA_WITH_CAPTURE}>:src/capture/v4l2_mjpeg_source.c>
   third_party/cJSON/cJSON.c
   third_party/base64/base64.c)
 
@@ -106,9 +121,13 @@ function(saa_client_target name type)
             ${CMAKE_CURRENT_SOURCE_DIR}/third_party/base64)
   target_compile_definitions(${name} PRIVATE SAA_CLIENT_BUILDING
     _POSIX_C_SOURCE=200809L $<$<PLATFORM_ID:Darwin>:_DARWIN_C_SOURCE>
-    $<$<BOOL:${SAA_ALLOW_INSECURE_TLS}>:SAA_ALLOW_INSECURE_TLS>)
+    $<$<BOOL:${SAA_ALLOW_INSECURE_TLS}>:SAA_ALLOW_INSECURE_TLS>
+    $<$<BOOL:${SAA_WITH_CAPTURE}>:SAAC_WITH_CAPTURE>)
   target_compile_options(${name} PRIVATE ${SAA_WARNINGS})
   target_link_libraries(${name} PRIVATE PkgConfig::SAAC_LWS Threads::Threads m ${SAA_ATOMIC_LIB})
+  if(SAA_WITH_CAPTURE)
+    target_link_libraries(${name} PRIVATE PkgConfig::SAAC_ALSA)
+  endif()
   if(OpenSSL_FOUND)
     target_include_directories(${name} PRIVATE ${OPENSSL_INCLUDE_DIR})
   endif()
@@ -135,12 +154,16 @@ set(_saa_deps "-lpthread -lm")
 if(SAA_ATOMIC_LIB)
   string(APPEND _saa_deps " -latomic")
 endif()
+set(_saa_requires "libwebsockets")
+if(SAA_WITH_CAPTURE)
+  string(APPEND _saa_requires " alsa")
+endif()
 if(SAA_BUILD_SHARED)
-  set(SAA_PC_REQUIRES "Requires.private: libwebsockets")
+  set(SAA_PC_REQUIRES "Requires.private: ${_saa_requires}")
   set(SAA_PC_LIBS "")
   set(SAA_PC_LIBS_PRIVATE "Libs.private: ${_saa_deps}")
 else()
-  set(SAA_PC_REQUIRES "Requires: libwebsockets")
+  set(SAA_PC_REQUIRES "Requires: ${_saa_requires}")
   set(SAA_PC_LIBS "${_saa_deps}")
   set(SAA_PC_LIBS_PRIVATE "")
 endif()
@@ -170,7 +193,7 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/saaclientConfig.cmake
 
 # ── demo ──────────────────────────────────────────────────────────────────
 if(SAA_BUILD_DEMO)
-  add_executable(saa_client_demo examples/demo/main.c)
+  add_executable(saa_client_demo examples/demo/main.c examples/demo/mjpeg_split.c)
   target_link_libraries(saa_client_demo PRIVATE saaclient Threads::Threads m)
   target_compile_definitions(saa_client_demo PRIVATE _POSIX_C_SOURCE=200809L
     $<$<PLATFORM_ID:Darwin>:_DARWIN_C_SOURCE>)
@@ -182,13 +205,27 @@ if(SAA_BUILD_DEMO)
   endif()
 endif()
 
-# The minimal integration, built here too so it never goes stale (not installed).
+# C++ is used only by the wrapper's example and tests; the library is C.
+include(CheckLanguage)
+check_language(CXX)
+if(CMAKE_CXX_COMPILER)
+  enable_language(CXX)
+endif()
+
+# The minimal integration, in C and in C++, built here too so it never goes
+# stale (not installed).
 if(SAA_BUILD_DEMO)
   add_executable(saa_minimal examples/minimal/main.c)
   target_link_libraries(saa_minimal PRIVATE saaclient)
   target_compile_definitions(saa_minimal PRIVATE _POSIX_C_SOURCE=200809L
     $<$<PLATFORM_ID:Darwin>:_DARWIN_C_SOURCE>)
   target_compile_options(saa_minimal PRIVATE ${SAA_WARNINGS})
+  if(CMAKE_CXX_COMPILER)
+    add_executable(saa_minimal_cpp examples/cpp/minimal.cpp)
+    set_target_properties(saa_minimal_cpp PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+    target_link_libraries(saa_minimal_cpp PRIVATE saaclient)
+    target_compile_options(saa_minimal_cpp PRIVATE ${SAA_WARNINGS})
+  endif()
 endif()
 
 # ── protocol spike (local only; not part of the package) ──────────────────
@@ -205,11 +242,6 @@ endif()
 
 # ── tests ─────────────────────────────────────────────────────────────────
 if(SAA_BUILD_TESTS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt)
-  include(CheckLanguage)
-  check_language(CXX)
-  if(CMAKE_CXX_COMPILER)
-    enable_language(CXX)
-  endif()
   enable_testing()
   add_subdirectory(tests)
 endif()
