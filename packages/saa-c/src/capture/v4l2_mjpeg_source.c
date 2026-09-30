@@ -19,7 +19,7 @@
 #include "jpeg.h"
 #include "log.h"
 
-#define BUFFERS 4
+#define BUFFERS 3                  /* one filling, one ready, one to spare: reads dequeue at once */
 
 typedef struct {
     int      fd;

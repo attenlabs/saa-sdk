@@ -128,6 +128,19 @@ static void push(saac_capture_t *cap, size_t frames)
         cap->cfg.wake(cap->cfg.ud);
 }
 
+/* Silence in place of a lost microphone: 20 ms at a time, on an absolute beat,
+ * up to now. */
+static void silence_until(saac_capture_t *cap, int64_t *beat, int64_t now)
+{
+    if (*beat < now - 10 * SILENCE_US) *beat = now - SILENCE_US;   /* fell behind: no burst */
+    size_t frames = (size_t)cap->rate * SILENCE_US / 1000000;
+    while (*beat + SILENCE_US <= now) {
+        memset(cap->abuf, 0, frames * (size_t)cap->channels * sizeof *cap->abuf);
+        push(cap, frames);
+        *beat += SILENCE_US;
+    }
+}
+
 static void *audio_main(void *arg)
 {
     saac_capture_t *cap = arg;
@@ -151,6 +164,7 @@ static void *audio_main(void *arg)
                 continue;
             }
             if (n == 0) {
+                if (lost) silence_until(cap, &beat, now);     /* reopened, and not delivering yet */
                 if (now - last < stall_us) continue;
                 snprintf(err, sizeof err, "%s delivered no audio for %d ms", cap->audio_device,
                          cap->cfg.audio_stall_ms);
@@ -160,8 +174,8 @@ static void *audio_main(void *arg)
             if (!lost) {                                  /* a reopened device failing again is the same outage */
                 post(cap, SAAC_CAP_AUDIO_LOST, err);
                 lost = 1;
+                beat = now;
             }
-            beat = now;
             next_try = now + retry_us;
             continue;
         }
@@ -183,12 +197,8 @@ static void *audio_main(void *arg)
             if (h) ops->close(h);
             next_try = now + retry_us;
         }
-        size_t frames = (size_t)cap->rate * SILENCE_US / 1000000;
-        memset(cap->abuf, 0, frames * (size_t)cap->channels * sizeof *cap->abuf);
-        push(cap, frames);
-        beat += SILENCE_US;
-        if (beat < now - 10 * SILENCE_US) beat = now;    /* fell behind: do not catch up in a burst */
-        sleep_until_us(beat);
+        silence_until(cap, &beat, now);
+        sleep_until_us(beat + SILENCE_US);
     }
     if (cap->ah) {
         ops->close(cap->ah);
