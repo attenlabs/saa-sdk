@@ -20,6 +20,7 @@ npm install @attenlabs/saa-js     # JavaScript / browser
 pip install attenlabs-saa          # Python (streaming SDK)
 pip install saa-livekit-client     # Python (LiveKit)
 pip install saa-pipecat-client     # Python (Pipecat on Daily)
+# C / C++ on Linux: build packages/saa-c from source (see its README)
 ```
 
 Get an API key at https://attentionlabs.ai.
@@ -104,7 +105,14 @@ SAA is the addressee decision between your VAD and STT; it is not a VAD, wake wo
   Summons the SAA hosted bot into your Daily room; your Pipecat pipeline consumes `AttentionEngine` events on Daily's app-message `"saa"` topic.
   → [packages/saa-pipecat-client](./packages/saa-pipecat-client)
 
+- **saa-c** — C client for Linux devices (source)
+  Install: build from source with CMake; needs libwebsockets 4.1 or later.
+  Your code pushes PCM audio and JPEG frames through a C99 API, or, built with `SAA_WITH_CAPTURE`, the library opens an ALSA microphone and a V4L2 MJPEG camera itself. The events arrive as callbacks: the same `turn_ready`, `prediction`, `vad`, `state`, `interrupt`, `interjection`, `config`, and utterance events as the SDKs, plus connection events. A header-only C++11 wrapper, `saa/saa_client.hpp`, comes with it. Runs on Raspberry Pi OS (arm64 and armv7) and x86_64 Linux. `examples/voice_agent` is a whole voice agent in C: turns to OpenAI Realtime, the reply to the device's speaker, with barge-in.
+  → [packages/saa-c](./packages/saa-c)
+
 ## Examples
+
+- **C voice agent** ([packages/saa-c/examples/voice_agent](./packages/saa-c/examples/voice_agent)) — `saa-c` on a Linux device: an ALSA microphone and speaker and a V4L2 camera, turns routed to OpenAI Realtime, with barge-in that cuts the model's copy of a reply to what was heard.
 
 - **ElevenLabs** ([examples/elevenlabs](./examples/elevenlabs)) — SAA gating an ElevenLabs Conversational AI agent so only device-directed speech reaches the model, via `attenlabs-saa`'s `feed_audio`.
 

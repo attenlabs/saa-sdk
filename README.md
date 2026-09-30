@@ -66,6 +66,7 @@ A voice agent's microphone hears every voice in the room: yours, a coworker's, t
 | **Pipecat (Daily)** | [`saa-pipecat-client`](./packages/saa-pipecat-client) | you run a [Pipecat](https://github.com/pipecat-ai/pipecat) voice agent on Daily. SAA joins your Daily room and gates the pipeline through the `"saa"` app-message topic. |
 | **ElevenLabs** | [`attenlabs-saa`](./packages/saa-py) | you run an [ElevenLabs Conversational AI](./examples/elevenlabs) agent. SAA gates it via the streaming SDK's `feed_audio` (its room is sealed, so SAA can't join it directly). |
 | **Twilio** | [`attenlabs-saa`](./packages/saa-py) | you run a [Twilio Media Streams](https://www.twilio.com/docs/voice/media-streams) telephony agent. SAA gates inbound/outbound call audio (μ-law 8 kHz resampled to PCM16) via the streaming SDK's `feed_audio`. |
+| **C / Linux devices** | [`saa-c`](./packages/saa-c) | your device or appliance runs C, C++, .NET, or Java on Linux. Your code pushes the audio and JPEG frames it already has into a small C99 library, or the library captures an ALSA microphone and a V4L2 camera itself, and events come back as callbacks. |
 
 ## Install
 
@@ -74,6 +75,7 @@ npm install @attenlabs/saa-js     # JavaScript / browser
 pip install attenlabs-saa          # Python (streaming SDK)
 pip install saa-livekit-client     # Python (LiveKit)
 pip install saa-pipecat-client     # Python (Pipecat on Daily)
+# C / C++ on Linux: build packages/saa-c from source (see its README)
 ```
 
 Get an API key at [attentionlabs.ai/dashboard](https://attentionlabs.ai/dashboard).
@@ -223,6 +225,7 @@ These Apache-2.0 client SDKs stream to the SAA cloud. For deployments where audi
 - [`packages/saa-js/README.md`](./packages/saa-js/README.md), [`packages/saa-py/README.md`](./packages/saa-py/README.md), streaming SDK reference.
 - [`packages/saa-livekit-client/README.md`](./packages/saa-livekit-client/README.md): the LiveKit client.
 - [`packages/saa-pipecat-client/README.md`](./packages/saa-pipecat-client/README.md): the Pipecat-on-Daily client.
+- [`packages/saa-c/README.md`](./packages/saa-c/README.md): the C client for Linux devices.
 - [`examples/README.md`](./examples/README.md), runnable examples.
 - [`examples/twilio/README.md`](./examples/twilio/README.md): the Twilio Media Streams bridge.
 

@@ -25,8 +25,9 @@ The SDK captures mic + webcam itself, streams to the hosted SAA inference server
 |---|---|---|
 | [`python/`](./python) | `attenlabs-saa` in a terminal: live ConvoStatus predictions, VAD, and conversation state in an ASCII status panel; turns routed to OpenAI Realtime. | `python main.py` |
 | [`web/`](./web) | `@attenlabs/saa-js` in the browser: an orb UI + guided flow, turns routed to OpenAI Realtime. | `npx serve` |
+| [`saa-c/examples/voice_agent/`](../packages/saa-c/examples/voice_agent) | `saa-c` on a Linux device, in C: an ALSA microphone and speaker and a V4L2 camera, turns routed to OpenAI Realtime, with barge-in. | `saa_voice_agent --alsa hw:CARD=Lite --speaker hw:CARD=Lite` |
 
-Both need only a `SAA_API_KEY` (the Python demo also accepts `--token`; the web demo takes the token in its UI or via `?token=`). An OpenAI key is optional, omit it to just watch predictions.
+The Python and web demos need only a `SAA_API_KEY` (the Python demo also accepts `--token`; the web demo takes the token in its UI or via `?token=`). An OpenAI key is optional, omit it to just watch predictions. The C voice agent needs both keys, `SAA_API_KEY` and `OPENAI_API_KEY`, from the environment.
 
 ## LiveKit Agents
 

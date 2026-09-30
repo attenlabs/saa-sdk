@@ -4,12 +4,15 @@
 
 The mental model: audio in -> addressee gate (the SAA decision) -> only addressed audio out. You capture the media; SAA emits typed events. The key event is `turnReady` / `turn_ready` — one device-directed utterance (PCM16 @ 16 kHz), ready to forward to your STT or LLM. The SDKs also emit `prediction`, `vad`, `state`, `interrupt`, `config`, and `stats`, and expose `mute`/`unmute`, `setThreshold`/`set_threshold`, and `markResponding`/`mark_responding`.
 
+Utterance handling (opt-in, preview): `utteranceHandling: true` / `utterance_handling=True` (also on `start_attention_session` for LiveKit and Pipecat) adds one `utteranceEnded` / `utterance_ended` event per utterance carrying the transcript and an addressee verdict (`prediction` 1 = aimed at a person, 2 = aimed at the device, `decision` respond / not_respond), plus `utteranceConfig` / `utterance_config` after `started`. Feed every assistant reply back with `addAssistantTurn` / `add_assistant_turn`; the classifier is conditioned on the dialogue. This stream is independent of `turnReady`; drive your LLM from one or the other. Transcripts are delivered, not retained.
+
 ## Install
 
 - JavaScript / browser: `npm install @attenlabs/saa-js`
 - Python (streaming SDK): `pip install attenlabs-saa`
 - Python (LiveKit): `pip install saa-livekit-client`
 - Python (Pipecat on Daily): `pip install saa-pipecat-client`
+- C / C++ on Linux and Raspberry Pi: build [packages/saa-c](./packages/saa-c) from source
 - API key: https://attentionlabs.ai
 
 ## Quickstart
@@ -46,6 +49,7 @@ To see live device-directed predictions on your own mic, run [examples/python](.
 - [attenlabs-saa](./packages/saa-py): Python streaming SDK (PyPI)
 - [saa-livekit-client](./packages/saa-livekit-client): LiveKit Agents integration (PyPI)
 - [saa-pipecat-client](./packages/saa-pipecat-client): Pipecat / Daily integration (PyPI)
+- [saa-c](./packages/saa-c): C client for Linux devices (source)
 
 ## Examples
 
