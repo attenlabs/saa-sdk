@@ -198,10 +198,19 @@ if(SAA_MOCK_TESTS)
   set_tests_properties(capture_harness PROPERTIES TIMEOUT 120)
   set_tests_properties(client_harness PROPERTIES TIMEOUT 90)
   if(TARGET saa_voice_agent)
-    # the voice agent against the SAA mock and the Realtime mock (about 25 s)
-    add_test(NAME voice_agent
-      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_voice_agent.py $<TARGET_FILE:saa_voice_agent>)
-    set_tests_properties(voice_agent PROPERTIES TIMEOUT 90)
+    # the voice agent against the SAA mock and the Realtime mock, in each of its
+    # echo-handling modes (about 25 s each, run in parallel)
+    foreach(_va_variant default muted half-duplex)
+      set(_va_name voice_agent)
+      if(NOT _va_variant STREQUAL "default")
+        string(REPLACE "-" "_" _va_suffix ${_va_variant})
+        set(_va_name voice_agent_${_va_suffix})
+      endif()
+      add_test(NAME ${_va_name}
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_voice_agent.py
+                $<TARGET_FILE:saa_voice_agent> --variant ${_va_variant})
+      set_tests_properties(${_va_name} PROPERTIES TIMEOUT 90)
+    endforeach()
   endif()
   if(TARGET saa_client_demo)
     # the demo against every scripted mock scenario (about 35 s, run in parallel);

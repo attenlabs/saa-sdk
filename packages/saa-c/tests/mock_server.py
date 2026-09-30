@@ -41,11 +41,16 @@ per token, each from 1, so a scenario can fail once and then recover.
                        the session lasts, and a drop after 10 minutes (6000 frames): odd
                        sessions reset the TCP connection, even ones close with 1011. Only the
                        last 2 s of PCM is kept, so the mock does not grow over a long run.
+  voiceagent           the voice agent's test (run_voice_agent.py): turn_ready at audio frames
+                       40, 90, 150, and 160, the last while the third's reply is still held back by
+                       the Realtime mock, and an interrupt 10 frames after the second
+                       responding_start. The summary adds each turn's frame, samples, and time.
 
 The happy path: started; warmup_complete after 20 audio frames; a prediction and a vad every
 4 frames from then; state listening at frame 40; at frame 60 state sending, a turn_ready that
 echoes the last 2 s of received PCM with two JPEG frames, then state idle; an interrupt at
-frame 70. Pings get pongs, and set_threshold gets a config with the value.
+frame 70. Pings get pongs, and set_threshold gets a config with the value. Every summary lists when each
+action arrived, in seconds of CLOCK_MONOTONIC, beside the actions.
 
 More listeners:
   --tls-cert/--tls-key  HTTPS and WSS ports; their /allocate hands out wss://localhost URLs
@@ -75,6 +80,8 @@ LOCK = threading.Lock()              # the HTTP servers run on threads, the WebS
 COUNTS = defaultdict(lambda: {"alloc": 0, "session": 0, "alloc_body": None})
 SOAK_CYCLE = 300                     # audio frames between turns: 30 s
 SOAK_DROP = 6000                     # audio frames per session: 10 minutes
+VA_TURNS = (40, 90, 150, 160)        # voiceagent: the audio frames that end a turn
+VA_INTERRUPT_AFTER = 10              # voiceagent: frames from the second responding_start
 
 TURN_JPEGS = [b"\xff\xd8\xff\xe0" + bytes(96) + b"\xff\xd9",   # 102 bytes
               b"\xff\xd8\xff\xdb" + bytes(200) + b"\xff\xd9"]  # 206 bytes
@@ -236,8 +243,11 @@ async def handler(ws):
 
     n_audio = n_video = bad = n_ctl = pings = 0
     actions, per_s, arrivals, video_per_s, peak_per_s = [], [], [], [], []
+    action_times, va_turns, va_interrupts = [], [], []
     peaks = scenario.startswith("capture")
     soak = scenario == "soak"
+    va = scenario == "voiceagent"
+    va_responding, va_interrupt_at = 0, None
     pcm = bytearray()
     t0 = time.monotonic()
     turn_sent = False
@@ -291,6 +301,20 @@ async def handler(ws):
                         await j({"type": "prediction", "class": cls, "display_class": cls, "confidence": 0.9,
                                  "source": "model", "num_faces": 0, "responding": False})
                         await j({"type": "vad", "is_speech": cls == 2, "probability": 0.97 if cls == 2 else 0.02})
+                    if va:
+                        if n_audio in VA_TURNS:
+                            turn = bytes(pcm[-20 * 3200:])
+                            await j({"type": "state", "state": "sending"})
+                            await j({"type": "turn_ready", "duration": len(turn) / 32000.0,
+                                     "audio_base64": b64(turn), "frames": [],
+                                     "server_turn_ready_ts_ms": int(time.time() * 1000)})
+                            await j({"type": "state", "state": "idle"})
+                            va_turns.append({"frame": n_audio, "samples": len(turn) // 2,
+                                             "t": round(time.clock_gettime(time.CLOCK_MONOTONIC), 4)})
+                        if n_audio == va_interrupt_at:
+                            await j({"type": "interrupt", "fade_ms": 300, "confidence": 0.93})
+                            va_interrupts.append(round(time.clock_gettime(time.CLOCK_MONOTONIC), 4))
+                        continue
                     if cyc == 40:
                         await j({"type": "state", "state": "listening"})
                     if cyc == 50 and utterance:
@@ -349,7 +373,12 @@ async def handler(ws):
                         await j({"type": "pong", "client_ts": obj.get("ts"), "server_ts": int(time.time() * 1000)})
                     continue
                 actions.append(obj)
+                action_times.append(round(time.clock_gettime(time.CLOCK_MONOTONIC), 4))
                 log(f"[ws] action {obj}")
+                if va and act == "responding_start":
+                    va_responding += 1
+                    if va_responding == 2:
+                        va_interrupt_at = n_audio + VA_INTERRUPT_AFTER
                 if act == "set_threshold":
                     await j({"type": "config", "model_class2_threshold": obj.get("value")})
                 elif scenario == "harness" and act == "utterance_assistant_turn" and obj.get("text") == "drop":
@@ -366,10 +395,14 @@ async def handler(ws):
             extra = {"audio_arrivals": arrivals} if scenario == "latency" else {}
             if peaks:
                 extra["audio_peak_per_s"] = peak_per_s
+            if va:
+                extra["va_turns"] = va_turns
+                extra["va_interrupts"] = va_interrupts
             with open(SUMMARY, "a") as f:
                 f.write(json.dumps({"scenario": scenario, "session": session, "tls": is_tls, "path": req.path,
                                     "audio_frames": n_audio, "bad_frames": bad, "video_frames": n_video,
                                     "control_messages": n_ctl, "pings": pings, "actions": actions,
+                                    "action_times": action_times,
                                     "audio_per_s": per_s, "video_per_s": video_per_s,
                                     "seconds": round(dt, 3), "audio_rate": round(rate, 2),
                                     "close_code": ws.close_code, "close_reason": ws.close_reason,
