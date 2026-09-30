@@ -6,6 +6,10 @@
  * 1600-sample (100 ms) chunks, and hand the chunks to the service thread
  * through a single-producer / single-consumer lock-free ring.
  *
+ * Input above 24 kHz (1.5 times the output rate) is low-passed first, flat to
+ * 7 kHz and at least 60 dB down from 8 kHz, so what lies above 8 kHz does not
+ * alias into the speech band.
+ *
  * Producer side (one feeder thread): saac_ai_push(). No allocation, no locks.
  * Consumer side (service thread): everything else.
  */
