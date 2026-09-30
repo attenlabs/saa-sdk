@@ -214,6 +214,10 @@ static void *video_main(void *arg)
     const int64_t retry_us = (int64_t)cap->cfg.retry_ms * 1000;
     const int64_t stall_us = (int64_t)cap->cfg.video_stall_ms * 1000;
     const int64_t interval = 1000000 / (cap->cfg.fps > 0 ? cap->cfg.fps : 4);
+    /* A frame due on the beat can arrive a little early. Waiting for the next one
+     * would lose a send each time: a 5 fps camera then gave 3.7 frames a second,
+     * not 4. The beat itself advances by whole intervals, so the rate holds. */
+    const int64_t slack = interval / 4;
     char err[160];
     int lost = 0;
     int64_t last = saac_clock_us(), next_send = 0, next_try = 0;
@@ -229,7 +233,7 @@ static void *video_main(void *arg)
                     lost = 0;
                 }
                 /* the camera's own rate may be higher: send the newest frame each interval */
-                if (now < next_send) continue;
+                if (now + slack < next_send) continue;
                 next_send = now - next_send > interval ? now + interval : next_send + interval;
                 if (!cap->cfg.accepting(cap->cfg.ud)) {
                     saac_fetch_add(cap->cfg.video_dropped, 1u);

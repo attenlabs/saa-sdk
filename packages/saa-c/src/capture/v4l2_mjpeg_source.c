@@ -68,10 +68,13 @@ static void fourcc(uint32_t f, char out[5])
 }
 
 /* The camera's MJPEG (or JPEG) format, or 0; list names every format it has. */
+#define LISTED 6                   /* formats named in a refusal; the rest are counted */
+
 static uint32_t find_mjpeg(int fd, char *list, size_t len)
 {
     uint32_t found = 0;
     size_t used = 0;
+    unsigned count = 0;
     list[0] = 0;
     for (unsigned i = 0; i < 64; i++) {
         struct v4l2_fmtdesc d;
@@ -83,11 +86,13 @@ static uint32_t find_mjpeg(int fd, char *list, size_t len)
             found = d.pixelformat;
         char cc[5];
         fourcc(d.pixelformat, cc);
-        if (used < len) {
+        if (count++ < LISTED && used < len) {
             int n = snprintf(list + used, len - used, "%s%s", used ? ", " : "", cc);
             if (n > 0) used += (size_t)n;
         }
     }
+    if (count > LISTED && used < len)
+        snprintf(list + used, len - used, " and %u more", count - LISTED);
     return found;
 }
 
