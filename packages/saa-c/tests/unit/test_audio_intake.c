@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -82,6 +83,80 @@ static void test_ratios(void)
     }
     CHECK(chunks == 599 || chunks == 600);               /* 60 s at 16 kHz = 600 chunks */
     saac_ai_destroy(ai);
+}
+
+/* The output level of a tone at freq Hz, fed at rate for 1.5 s, relative to its
+ * input level, in dB; the first 0.5 s, the filter's settling, is left out. */
+static double tone_db(int rate, double freq)
+{
+    saac_audio_intake_t *ai = saac_ai_create(2000);
+    saac_ai_set_open(ai, 1);
+    static float blk[4800];
+    const double amp = 0.9;
+    long n = 0;
+    double sq = 0.0;
+    size_t count = 0, seen = 0;
+    uint8_t chunk[SAAC_AI_CHUNK_BYTES];
+    while (n < (long)rate * 3 / 2) {
+        for (int i = 0; i < 4800; i++, n++) blk[i] = (float)(amp * sin(2.0 * 3.14159265358979 * freq * n / rate));
+        saac_ai_push(ai, blk, 4800, rate, SAA_AUDIO_F32, 1, 0);
+        while (saac_ai_pop(ai, chunk)) {
+            for (int i = 0; i < SAAC_AI_CHUNK_SAMPLES; i++, seen++) {
+                if (seen < 8000) continue;
+                double v = (int16_t)(chunk[2 * i] | chunk[2 * i + 1] << 8) / 32767.0;
+                sq += v * v;
+                count++;
+            }
+        }
+    }
+    saac_ai_destroy(ai);
+    double rms = sqrt(sq / (double)(count ? count : 1));
+    return 20.0 * log10((rms > 1e-9 ? rms : 1e-9) / (amp / sqrt(2.0)));
+}
+
+/* Input above 24 kHz is low-passed: speech passes, and what lies above 8 kHz is
+ * gone rather than folded into the speech band. */
+static void test_antialias(void)
+{
+    static const int rates[] = { 32000, 44100, 48000, 96000 };
+    for (size_t r = 0; r < sizeof rates / sizeof rates[0]; r++) {
+        double pass = tone_db(rates[r], 1000.0);
+        CHECK(fabs(pass) <= 0.5);
+        static const double stop[] = { 8500.0, 10000.0, 12000.0, 15000.0 };
+        for (size_t k = 0; k < sizeof stop / sizeof stop[0]; k++) {
+            double db = tone_db(rates[r], stop[k]);
+            if (db > -60.0) fprintf(stderr, "  %d Hz input: %.0f Hz is only %.1f dB down\n", rates[r], stop[k], -db);
+            CHECK(db <= -60.0);
+        }
+    }
+    /* 24 kHz and below are not filtered: a 10 kHz tone at 24 kHz still aliases, as in v1 */
+    CHECK(tone_db(24000, 10000.0) > -20.0);
+}
+
+/* An hour of input at 44.1 and 48 kHz, in uneven blocks: 36,000 chunks, give or
+ * take the latency. */
+static void test_hour_no_drift(void)
+{
+    static const int rates[] = { 44100, 48000 };
+    static int16_t blk[8192];
+    for (int i = 0; i < 8192; i++) blk[i] = (int16_t)((i * 37) % 2000 - 1000);
+    for (size_t r = 0; r < 2; r++) {
+        saac_audio_intake_t *ai = saac_ai_create(2000);
+        saac_ai_set_open(ai, 1);
+        long long fed = 0, target = (long long)rates[r] * 3600;
+        size_t chunks = 0;
+        unsigned seed = 11;
+        while (fed < target) {
+            seed = seed * 1103515245u + 12345u;
+            long long n = 1 + (long long)((seed >> 8) % 8192);
+            if (fed + n > target) n = target - fed;
+            saac_ai_push(ai, blk, (size_t)n, rates[r], SAA_AUDIO_S16, 1, 0);
+            fed += n;
+            chunks += drain(ai, NULL);
+        }
+        CHECK(chunks == 35999 || chunks == 36000);
+        saac_ai_destroy(ai);
+    }
 }
 
 static void test_gate_ring_reset(void)
@@ -165,6 +240,8 @@ int main(void)
     test_quantize();
     test_passthrough_16k();
     test_ratios();
+    test_antialias();
+    test_hour_no_drift();
     test_gate_ring_reset();
     test_threads();
     return CHECK_RESULT();

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """run_consumer.py - installs saa-c into a temporary prefix and builds
 examples/minimal against it the two ways an integrator would: with pkg-config
-and with CMake's find_package. With --run, both builds then stream three
-seconds of audio to the mock server.
+and with CMake's find_package. With --cxx, examples/cpp is built both ways
+too. With --run, every build then streams three seconds of audio to the mock
+server.
 
-usage: run_consumer.py BUILD_DIR C_COMPILER [--run]
+usage: run_consumer.py BUILD_DIR C_COMPILER [--cxx CXX_COMPILER] [--run]
 """
 import glob
 import json
@@ -52,6 +53,7 @@ def wait_listening(port, timeout=5.0):
 def main():
     build_dir, cc = sys.argv[1], sys.argv[2]
     do_run = "--run" in sys.argv[3:]
+    cxx = sys.argv[sys.argv.index("--cxx") + 1] if "--cxx" in sys.argv[3:] else None
     failures = []
     with tempfile.TemporaryDirectory() as tmp:
         prefix = os.path.join(tmp, "prefix")
@@ -80,8 +82,22 @@ def main():
                 f"-DCMAKE_PREFIX_PATH={prefix}", f"-DCMAKE_C_COMPILER={cc}"]).returncode or \
            run(["cmake", "--build", cm_build]).returncode:
             failures.append("building examples/minimal with find_package(saaclient)")
+        builds = [("pkg-config", via_pc), ("find_package", via_cmake)]
 
-        # 3. both binaries stream to the mock server
+        # 3. the C++ example, both ways
+        if cxx:
+            cpp_pc = os.path.join(tmp, "minimal_cpp_pc")
+            if flags.returncode or run([cxx, "-std=c++11", os.path.join(PKG, "examples", "cpp", "minimal.cpp"),
+                                        "-o", cpp_pc] + shlex.split(flags.stdout)).returncode:
+                failures.append("building examples/cpp with pkg-config")
+            cpp_build = os.path.join(tmp, "cmake-build-cpp")
+            if run(["cmake", "-S", os.path.join(PKG, "examples", "cpp"), "-B", cpp_build,
+                    f"-DCMAKE_PREFIX_PATH={prefix}", f"-DCMAKE_CXX_COMPILER={cxx}"]).returncode or \
+               run(["cmake", "--build", cpp_build]).returncode:
+                failures.append("building examples/cpp with find_package(saaclient)")
+            builds += [("cpp-pkg-config", cpp_pc), ("cpp-find_package", os.path.join(cpp_build, "minimal_cpp"))]
+
+        # 4. every binary streams to the mock server
         if do_run:
             pcm = os.path.join(tmp, "tone.raw")
             with open(pcm, "wb") as f:
@@ -95,7 +111,7 @@ def main():
             try:
                 if not wait_listening(ws):
                     failures.append("the mock server did not start")
-                for name, binary in (("pkg-config", via_pc), ("find_package", via_cmake)):
+                for name, binary in builds:
                     if not os.path.exists(binary):
                         continue
                     with open(pcm, "rb") as stdin:
@@ -109,7 +125,9 @@ def main():
                 if os.path.exists(summary):
                     with open(summary) as f:
                         sessions = [json.loads(line) for line in f if line.strip()]
-                for name in ("pkg-config", "find_package"):
+                for name, binary in builds:
+                    if not os.path.exists(binary):
+                        continue
                     got = [s for s in sessions if s["scenario"] == f"consumer-{name}"]
                     if not got or got[0]["audio_frames"] < 25 or got[0]["bad_frames"]:
                         failures.append(f"the mock saw {got} from the {name} build (want about 30 frames)")
@@ -120,7 +138,8 @@ def main():
     for msg in failures:
         print("FAIL:", msg)
     if not failures:
-        print("ok: installed, built with pkg-config and find_package" + (", and streamed" if do_run else ""))
+        print("ok: installed, built with pkg-config and find_package" + (", in C and C++" if cxx else "")
+              + (", and streamed" if do_run else ""))
     return 1 if failures else 0
 
 

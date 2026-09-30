@@ -604,7 +604,12 @@ def cli_checks(demo, wav):
     h = subprocess.run([demo, "--help"], capture_output=True, text=True, env=env)
     v = subprocess.run([demo, "--version"], capture_output=True, text=True, env=env)
     bad = subprocess.run([demo, "--wav", wav, "--channel", "9"], capture_output=True, text=True, env=env)
+    quiet = subprocess.run([demo, "--wav", wav, "--quiet"], capture_output=True, text=True, env=env)
+    fast = subprocess.run([demo, "--wav", "-", "--fast"], capture_output=True, text=True, env=env,
+                          stdin=subprocess.DEVNULL)
     return [
+        (quiet.returncode == 5 and "--events" in quiet.stderr, f"--quiet without --events: exit {quiet.returncode}"),
+        (fast.returncode == 5 and "--fast" in fast.stderr, f"--fast with --wav -: exit {fast.returncode}"),
         (h.returncode == 0 and "usage:" in h.stdout and "--record-turns" in h.stdout, f"--help: exit {h.returncode}"),
         (v.returncode == 0 and v.stdout.startswith("saa_client_demo "), f"--version: exit {v.returncode} {v.stdout!r}"),
         (bad.returncode == 5 and "--channel 9" in bad.stderr, f"--channel 9 on a stereo WAV: exit {bad.returncode}"),

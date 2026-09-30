@@ -4,9 +4,10 @@
  * that a runner can compare those times with when the mock server received
  * each 100 ms frame; both read CLOCK_MONOTONIC on the same machine.
  *
- * usage: feed_bench WS_URL SECONDS [--stereo48] [--jpeg BYTES] [--times] [--idle]
+ * usage: feed_bench WS_URL SECONDS [--stereo RATE] [--jpeg BYTES] [--times] [--idle]
  *   default      16 kHz mono int16 in 10 ms blocks
- *   --stereo48   48 kHz stereo float32 instead, so the resampler runs
+ *   --stereo R   stereo float32 at R Hz instead, so the resampler runs: 48000
+ *                and 44100 take its two paths (--stereo48 is --stereo 48000)
  *   --jpeg N     also feed an N-byte JPEG stand-in 4 times a second
  *   --times      add "feed_times", the return time of every feed call
  *   --idle       run the same loop on an open connection without feeding
@@ -69,32 +70,37 @@ static void on_error(void *ud, const saa_error_ev_t *e)
 int main(int argc, char **argv)
 {
     if (argc < 3) {
-        fprintf(stderr, "usage: %s WS_URL SECONDS [--stereo48] [--jpeg BYTES] [--times] [--idle]\n", argv[0]);
+        fprintf(stderr, "usage: %s WS_URL SECONDS [--stereo RATE] [--jpeg BYTES] [--times] [--idle]\n", argv[0]);
         return 2;
     }
-    int stereo48 = 0, times = 0, idle = 0;
+    int stereo = 0, times = 0, idle = 0;           /* stereo: its rate, or 0 */
     size_t jpeg_len = 0;
     for (int i = 3; i < argc; i++) {
-        if (!strcmp(argv[i], "--stereo48")) stereo48 = 1;
+        if (!strcmp(argv[i], "--stereo48")) stereo = 48000;
+        else if (!strcmp(argv[i], "--stereo") && i + 1 < argc) stereo = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--times")) times = 1;
         else if (!strcmp(argv[i], "--idle")) idle = 1;
         else if (!strcmp(argv[i], "--jpeg") && i + 1 < argc) jpeg_len = (size_t)atol(argv[++i]);
         else { fprintf(stderr, "unknown argument %s\n", argv[i]); return 2; }
     }
-    const int rate = stereo48 ? 48000 : 16000, channels = stereo48 ? 2 : 1, block = rate / 100;
+    if (stereo && (stereo < 8000 || stereo > 96000 || stereo % 100)) {
+        fprintf(stderr, "--stereo takes a rate from 8000 to 96000, a multiple of 100\n");
+        return 2;
+    }
+    const int rate = stereo ? stereo : 16000, channels = stereo ? 2 : 1, block = rate / 100;
     long nblocks = (long)(atof(argv[2]) * 100.0);
 
     /* one second of a 220 Hz tone on channel 0, fed in a loop; nothing is computed per sample */
     float *f32 = NULL;
     short *s16 = NULL;
-    if (stereo48) f32 = calloc((size_t)rate * 2, sizeof *f32);
+    if (stereo) f32 = calloc((size_t)rate * 2, sizeof *f32);
     else s16 = calloc((size_t)rate, sizeof *s16);
     uint8_t *jpeg = jpeg_len ? malloc(jpeg_len) : NULL;
     double *t = times && nblocks > 0 ? calloc((size_t)nblocks, sizeof *t) : NULL;
-    if ((stereo48 ? !f32 : !s16) || (jpeg_len && !jpeg) || (times && !t) || nblocks <= 0) return 2;
+    if ((stereo ? !f32 : !s16) || (jpeg_len && !jpeg) || (times && !t) || nblocks <= 0) return 2;
     for (int i = 0; i < rate; i++) {
         double v = 0.25 * sin(2.0 * 3.14159265358979 * 220.0 * i / rate);
-        if (stereo48) f32[2 * i] = (float)v;
+        if (stereo) f32[2 * i] = (float)v;
         else s16[i] = (short)lrint(v * 32767.0);
     }
     for (size_t i = 0; i < jpeg_len; i++) jpeg[i] = (uint8_t)(i * 131u);
@@ -116,7 +122,7 @@ int main(int argc, char **argv)
     double cpu0 = cpu_s(), wall0 = mono_s(), next = wall0;
     for (; fed < nblocks; fed++) {
         int rc = idle ? SAA_CLIENT_OK
-               : stereo48 ? saa_client_feed_audio_interleaved(c, f32 + 2 * pos, (size_t)block, rate,
+               : stereo ? saa_client_feed_audio_interleaved(c, f32 + 2 * pos, (size_t)block, rate,
                                                                SAA_AUDIO_F32, 2, 0)
                           : saa_client_feed_audio(c, s16 + pos, (size_t)block, rate, SAA_AUDIO_S16);
         if (t) t[fed] = mono_s();

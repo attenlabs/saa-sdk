@@ -36,6 +36,11 @@ per token, each from 1, so a scenario can fail once and then recover.
                        50, when the session was allocated with utterance_handling: true
   harness              an utterance_assistant_turn with the text "drop" closes the session
                        with 1011
+  capture-*            the happy path; the summary adds the loudest audio sample of each second
+  soak                 the happy path's turn cycle every 30 s (300 audio frames), for as long as
+                       the session lasts, and a drop after 10 minutes (6000 frames): odd
+                       sessions reset the TCP connection, even ones close with 1011. Only the
+                       last 2 s of PCM is kept, so the mock does not grow over a long run.
 
 The happy path: started; warmup_complete after 20 audio frames; a prediction and a vad every
 4 frames from then; state listening at frame 40; at frame 60 state sending, a turn_ready that
@@ -68,6 +73,8 @@ SUMMARY = None                       # path from --summary
 
 LOCK = threading.Lock()              # the HTTP servers run on threads, the WebSocket on asyncio
 COUNTS = defaultdict(lambda: {"alloc": 0, "session": 0, "alloc_body": None})
+SOAK_CYCLE = 300                     # audio frames between turns: 30 s
+SOAK_DROP = 6000                     # audio frames per session: 10 minutes
 
 TURN_JPEGS = [b"\xff\xd8\xff\xe0" + bytes(96) + b"\xff\xd9",   # 102 bytes
               b"\xff\xd8\xff\xdb" + bytes(200) + b"\xff\xd9"]  # 206 bytes
@@ -228,7 +235,9 @@ async def handler(ws):
     utterance = "utterance_handling=1" in req.path
 
     n_audio = n_video = bad = n_ctl = pings = 0
-    actions, per_s, arrivals = [], [], []
+    actions, per_s, arrivals, video_per_s, peak_per_s = [], [], [], [], []
+    peaks = scenario.startswith("capture")
+    soak = scenario == "soak"
     pcm = bytearray()
     t0 = time.monotonic()
     turn_sent = False
@@ -265,26 +274,32 @@ async def handler(ws):
                     sec = int(time.monotonic() - t0)
                     per_s.extend([0] * (sec + 1 - len(per_s)))
                     per_s[sec] += 1
+                    if peaks and len(msg) == 3201:
+                        peak_per_s.extend([0] * (sec + 1 - len(peak_per_s)))
+                        peak_per_s[sec] = max(peak_per_s[sec], max(map(abs, struct.unpack("<1600h", msg[1:]))))
                     if len(msg) != 3201:
                         bad += 1
                         log(f"[ws] BAD audio frame length {len(msg)}")
                     pcm += msg[1:]
+                    if soak and len(pcm) > 128000:
+                        del pcm[:-64000]                   # a turn echoes only the last 2 s
+                    cyc = n_audio % SOAK_CYCLE if soak else n_audio     # soak: the cycle repeats
                     if n_audio == 20:
                         await j({"type": "warmup_complete", "session_id": f"mock-{session}"})
                     if n_audio >= 20 and n_audio % 4 == 0:
-                        cls = 2 if 40 <= n_audio < 60 else 0
+                        cls = 2 if 40 <= cyc < 60 else 0
                         await j({"type": "prediction", "class": cls, "display_class": cls, "confidence": 0.9,
                                  "source": "model", "num_faces": 0, "responding": False})
                         await j({"type": "vad", "is_speech": cls == 2, "probability": 0.97 if cls == 2 else 0.02})
-                    if n_audio == 40:
+                    if cyc == 40:
                         await j({"type": "state", "state": "listening"})
-                    if n_audio == 50 and utterance:
+                    if cyc == 50 and utterance:
                         await j({"type": "utterance_ended", "seq": 1, "text": "two burgers please",
                                  "prediction": 2, "confidence": 0.88, "decision": "respond",
                                  "reason": "addressed_to_device", "start_s": 1.25, "end_s": 3.5,
                                  "truncated": False, "assistant_turns": 0, "preview": True,
                                  "latency_ms": 140, "audio_base64": b64(bytes(pcm[-32000:]))})
-                    if n_audio == 60 and not turn_sent:
+                    if cyc == 60 and (soak or not turn_sent):
                         turn_sent = True
                         await j({"type": "state", "state": "sending"})
                         if scenario in ("bigturn", "tls"):
@@ -299,18 +314,24 @@ async def handler(ws):
                                                 {"ts_offset_s": 0.25, "image_base64": b64(TURN_JPEGS[1])}],
                                      "server_turn_ready_ts_ms": int(time.time() * 1000)})
                         await j({"type": "state", "state": "idle"})
-                    if n_audio == 70:
+                    if cyc == 70:
                         await j({"type": "interrupt", "fade_ms": 300, "confidence": 0.93})
-                    if scenario == "drop" and n_audio == 30:
+                    if (scenario == "drop" and n_audio == 30) or (soak and n_audio == SOAK_DROP and session % 2):
                         sock = ws.transport.get_extra_info("socket")
                         sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
                         ws.transport.abort()               # RST, not FIN
+                        return
+                    if soak and n_audio == SOAK_DROP:
+                        await ws.close(1011, "mock soak drop")
                         return
                     if scenario in ("auth_flap", "ratelimit_reconnect") and session == 1 and n_audio == 5:
                         await ws.close(1011, "mock drop")
                         return
                 elif tag == 0x02:
                     n_video += 1
+                    sec = int(time.monotonic() - t0)
+                    video_per_s.extend([0] * (sec + 1 - len(video_per_s)))
+                    video_per_s[sec] += 1
                 else:
                     bad += 1
                     log(f"[ws] BAD tag {tag}")
@@ -343,11 +364,14 @@ async def handler(ws):
             f"video={n_video} ctl={n_ctl} bad={bad} close_code={ws.close_code} close_reason={ws.close_reason!r}")
         if SUMMARY:
             extra = {"audio_arrivals": arrivals} if scenario == "latency" else {}
+            if peaks:
+                extra["audio_peak_per_s"] = peak_per_s
             with open(SUMMARY, "a") as f:
                 f.write(json.dumps({"scenario": scenario, "session": session, "tls": is_tls, "path": req.path,
                                     "audio_frames": n_audio, "bad_frames": bad, "video_frames": n_video,
                                     "control_messages": n_ctl, "pings": pings, "actions": actions,
-                                    "audio_per_s": per_s, "seconds": round(dt, 3), "audio_rate": round(rate, 2),
+                                    "audio_per_s": per_s, "video_per_s": video_per_s,
+                                    "seconds": round(dt, 3), "audio_rate": round(rate, 2),
                                     "close_code": ws.close_code, "close_reason": ws.close_reason,
                                     "user_agent": req.headers.get("User-Agent", ""),
                                     "allocate_body": alloc_body, **extra}) + "\n")

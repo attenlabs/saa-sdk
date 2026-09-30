@@ -21,6 +21,27 @@ if(CMAKE_CXX_COMPILER)
   target_include_directories(header_check_cxx11 PRIVATE ${PROJECT_SOURCE_DIR}/include)
   target_compile_options(header_check_cxx11 PRIVATE ${_hdr_flags})
   add_test(NAME header_check_cxx11 COMMAND header_check_cxx11)
+
+  # The C++ wrapper compiles alone as C++11 through C++20, and without exceptions.
+  foreach(std 11 14 17 20)
+    if(NOT "cxx_std_${std}" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+      continue()
+    endif()
+    add_executable(header_check_hpp${std} headers/header_check_hpp.cpp)
+    set_target_properties(header_check_hpp${std} PROPERTIES
+      CXX_STANDARD ${std} CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+    target_link_libraries(header_check_hpp${std} PRIVATE saaclient Threads::Threads m)
+    target_compile_options(header_check_hpp${std} PRIVATE ${_hdr_flags})
+    add_test(NAME header_check_hpp${std} COMMAND header_check_hpp${std})
+  endforeach()
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_executable(header_check_hpp_noexcept headers/header_check_hpp.cpp)
+    set_target_properties(header_check_hpp_noexcept PROPERTIES
+      CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+    target_link_libraries(header_check_hpp_noexcept PRIVATE saaclient Threads::Threads m)
+    target_compile_options(header_check_hpp_noexcept PRIVATE ${_hdr_flags} -fno-exceptions)
+    add_test(NAME header_check_hpp_noexcept COMMAND header_check_hpp_noexcept)
+  endif()
 endif()
 
 # Unit tests: internal modules, no network (the resolver test looks up localhost).
@@ -37,11 +58,28 @@ endfunction()
 saa_unit_test(test_audio_intake)
 saa_unit_test(test_backoff)
 saa_unit_test(test_callback_guard)
+saa_unit_test(test_capture)
+saa_unit_test(test_jpeg)
 saa_unit_test(test_log)
+saa_unit_test(test_mjpeg_split)
+target_sources(test_mjpeg_split PRIVATE ${PROJECT_SOURCE_DIR}/examples/demo/mjpeg_split.c)
+target_include_directories(test_mjpeg_split PRIVATE ${PROJECT_SOURCE_DIR}/examples/demo)
 saa_unit_test(test_protocol)
 saa_unit_test(test_resolver)
 saa_unit_test(test_url)
 saa_unit_test(test_video_intake)
+
+# Capture builds: the ALSA source through ALSA's file plugin, which needs no
+# sound card; and a probe for real devices, which is not a CTest.
+if(SAA_WITH_CAPTURE)
+  saa_unit_test(test_alsa_file)
+  target_link_libraries(test_alsa_file PRIVATE PkgConfig::SAAC_ALSA)
+  add_executable(capture_probe integration/capture_probe.c)
+  target_include_directories(capture_probe PRIVATE ${PROJECT_SOURCE_DIR}/src)
+  target_link_libraries(capture_probe PRIVATE saaclient Threads::Threads m)
+  target_compile_definitions(capture_probe PRIVATE _POSIX_C_SOURCE=200809L)
+  target_compile_options(capture_probe PRIVATE ${SAA_WARNINGS})
+endif()
 
 find_package(Python3 COMPONENTS Interpreter)
 
@@ -90,6 +128,9 @@ endif()
 # example with pkg-config and with find_package (and stream, given the mock).
 if(Python3_FOUND AND TARGET saa_minimal AND NOT CMAKE_CROSSCOMPILING AND NOT SAA_SANITIZE)
   set(_saa_consumer_args)
+  if(CMAKE_CXX_COMPILER)
+    list(APPEND _saa_consumer_args --cxx ${CMAKE_CXX_COMPILER})
+  endif()
   if(SAA_MOCK_TESTS)
     list(APPEND _saa_consumer_args --run)
   endif()
@@ -113,6 +154,22 @@ target_compile_definitions(client_harness PRIVATE _POSIX_C_SOURCE=200809L
   $<$<PLATFORM_ID:Darwin>:_DARWIN_C_SOURCE>)
 target_compile_options(client_harness PRIVATE ${SAA_WARNINGS})
 
+# The client's own capture, with fake devices, against the mock.
+add_executable(capture_harness integration/capture_harness.c)
+target_include_directories(capture_harness PRIVATE ${PROJECT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/unit)
+target_link_libraries(capture_harness PRIVATE saaclient Threads::Threads m)
+target_compile_definitions(capture_harness PRIVATE _POSIX_C_SOURCE=200809L
+  $<$<PLATFORM_ID:Darwin>:_DARWIN_C_SOURCE>)
+target_compile_options(capture_harness PRIVATE ${SAA_WARNINGS})
+
+# saa::Client against the mock: a turn, a move, and a handler that throws.
+if(CMAKE_CXX_COMPILER)
+  add_executable(cpp_smoke integration/cpp_smoke.cpp)
+  set_target_properties(cpp_smoke PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+  target_link_libraries(cpp_smoke PRIVATE saaclient Threads::Threads m)
+  target_compile_options(cpp_smoke PRIVATE ${SAA_WARNINGS})
+endif()
+
 # CPU and feed-to-wire latency, for device_report.py (timing: not a CTest).
 add_executable(feed_bench integration/feed_bench.c)
 target_link_libraries(feed_bench PRIVATE saaclient Threads::Threads m)
@@ -127,6 +184,15 @@ if(SAA_MOCK_TESTS)
   add_test(NAME client_harness
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_harness.py
             $<TARGET_FILE:client_harness>)
+  if(CMAKE_CXX_COMPILER)
+    add_test(NAME cpp_smoke
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_with_mock.py $<TARGET_FILE:cpp_smoke>)
+    set_tests_properties(cpp_smoke PROPERTIES TIMEOUT 120)
+  endif()
+  add_test(NAME capture_harness
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_capture.py
+            $<TARGET_FILE:capture_harness>)
+  set_tests_properties(capture_harness PROPERTIES TIMEOUT 120)
   set_tests_properties(client_harness PROPERTIES TIMEOUT 90)
   if(TARGET saa_client_demo)
     # the demo against every scripted mock scenario (about 35 s, run in parallel);

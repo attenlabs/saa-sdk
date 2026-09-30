@@ -5,6 +5,7 @@ it, with the raw numbers as JSON, to build/device-report/.
 
 usage: python3 tests/device_report.py [--quick] [--skip-tests] [--jobs N]
                                       [--live-wav FILE] [--out DIR]
+                                      [--alsa DEV [--channel N]] [--v4l2 DEV]
 
 Run it with a Python that has websockets 13 or newer: the mock server and the
 tests use the same interpreter. It also needs cmake, a C compiler, pkg-config,
@@ -15,9 +16,9 @@ What it measures:
   - CPU: user + system time while streaming in real time from memory
     (feed_bench, so no file reading is counted), as a percentage of one core:
     audio only, 48 kHz stereo in 10 ms blocks so the resampler runs, then with
-    30 KB JPEGs at 4 fps, the size of 640x480 frames. The same loop on an open
-    connection without feeding is measured too, and subtracted to give the
-    library's own share;
+    30 KB JPEGs at 4 fps, the size of 640x480 frames, and 44.1 kHz stereo, the
+    resampler's other path. The same loop on an open connection without
+    feeding is measured too, and subtracted to give the library's own share;
   - memory: resident memory while streaming audio, and while the demo holds a
     decoded 25 s turn received over TLS. On Linux it reads /proc/PID/smaps, to
     give the figure without the pages of the TLS libraries;
@@ -25,6 +26,10 @@ What it measures:
     the first sample of each 100 ms frame and for the call that completes it.
 With --live-wav, and an API key in SAA_API_KEY, it also runs live_smoke.py, on the
 package's sample recording or on the WAV given.
+
+With --alsa (and --v4l2), it also builds with SAA_WITH_CAPTURE and runs the demo on
+those devices against the mock: the demo's CPU and memory while it captures, and
+what the mock received each second.
 """
 import argparse
 import json
@@ -361,6 +366,9 @@ def markdown(rep):
             f"| CPU, audio only (48 kHz stereo in 10 ms blocks) | ≤ 2 % of one core (Cortex-A53) | "
             f"{share(f['cpu_audio'])} % ({f['cpu_audio']['cpu_pct']} % with the loop) | "
             f"{verdict(share(f['cpu_audio']), TARGETS['cpu_audio_pct'])} |",
+            f"| CPU, audio only (44.1 kHz stereo in 10 ms blocks) | ≤ 2 % of one core (Cortex-A53) | "
+            f"{share(f['cpu_audio_44k'])} % ({f['cpu_audio_44k']['cpu_pct']} % with the loop) | "
+            f"{verdict(share(f['cpu_audio_44k']), TARGETS['cpu_audio_pct'])} |",
             f"| CPU, audio + 30 KB JPEGs at 4 fps | ≤ 5 % of one core (Cortex-A53) | "
             f"{share(f['cpu_video'])} % ({f['cpu_video']['cpu_pct']} % with the loop) | "
             f"{verdict(share(f['cpu_video']), TARGETS['cpu_video_pct'])} |",
@@ -381,6 +389,29 @@ def markdown(rep):
         if not linux:
             lines += ["Not Linux: without /proc/PID/smaps the memory rows cannot separate the TLS libraries, "
                       "and the demo's peak counts every system library it touches, so they carry no verdict.", ""]
+        c = f.get("capture")
+        if c:
+            mc = c.get("memory", {})
+            aps, vps = c.get("audio_per_s") or [], c.get("video_per_s") or []
+            inner = lambda v: v[1:-1] if len(v) > 2 else v    # the first and last seconds are partial
+            lines += [
+                "## Capture", "",
+                f"The demo capturing from `{c['alsa']}`{' and `' + c['v4l2'] + '`' if c.get('v4l2') else ''}, "
+                f"streaming to the mock (exit {c['exit']}).", "",
+                "| Metric | Measured |", "|---|---|",
+                f"| CPU, the whole demo | {c.get('cpu_pct')} % of one core |",
+                f"| RSS, without TLS library pages | {kb(mc.get('max_rss_without_tls_libs_kb'))} "
+                f"(anonymous {kb(mc.get('max_anon_kb'))}, peak {kb(mc.get('peak_rss_kb'))}) |",
+                f"| Audio frames a second at the mock | {min(inner(aps), default='?')} to {max(inner(aps), default='?')} "
+                f"(10 expected) |",
+                f"| Video frames a second at the mock | "
+                f"{(str(min(inner(vps), default='?')) + ' to ' + str(max(inner(vps), default='?'))) if c.get('v4l2') else 'no camera'}"
+                f"{' (4 expected)' if c.get('v4l2') else ''} |",
+                f"| Malformed frames, errors | {c.get('bad_frames')}, {', '.join(c.get('errors') or []) or 'none'} |",
+                "",
+            ]
+            if c.get("stderr"):
+                lines += ["```", c["stderr"].strip(), "```", ""]
     return "\n".join(lines)
 
 
@@ -393,7 +424,13 @@ def main():
     ap.add_argument("--live-wav", nargs="?", const=os.path.join(PKG, "examples", "demo", "sample_drive_thru.wav"),
                     help="also stream a speech WAV, by default the sample, to the real service (needs SAA_API_KEY)")
     ap.add_argument("--out", default=os.path.join(PKG, "build", "device-report"), help="where to build and write")
+    ap.add_argument("--alsa", help="also measure the demo capturing from this ALSA device (a capture build)")
+    ap.add_argument("--channel", type=int, default=0, help="the channel to keep from --alsa (default 0)")
+    ap.add_argument("--v4l2", help="and from this V4L2 MJPEG camera")
     args = ap.parse_args()
+    if args.v4l2 and not args.alsa:
+        print("--v4l2 goes with --alsa: the demo captures live video only with live audio", file=sys.stderr)
+        return 2
     if args.live_wav and not os.environ.get("SAA_API_KEY"):
         print("--live-wav needs an API key in SAA_API_KEY", file=sys.stderr)
         return 2
@@ -416,6 +453,16 @@ def main():
             return 1
     demo = os.path.join(default, "saa_client_demo")
     feeder = os.path.join(default, "tests", "feed_bench")
+    capture_demo = None
+    if args.alsa:
+        print("building with capture ...", flush=True)
+        cap_dir = os.path.join(args.out, "capture")
+        ok, log = cmake_build(cap_dir, "RelWithDebInfo", ["-DSAA_WITH_CAPTURE=ON", "-DSAA_BUILD_TESTS=OFF"],
+                              target="saa_client_demo")
+        if not ok:
+            print(log)
+            return 1
+        capture_demo = os.path.join(cap_dir, "saa_client_demo")
 
     # 2. the tests
     rep["tests"] = {"build": build}
@@ -454,9 +501,11 @@ def main():
         print(f"measuring the feeding loop alone ({cpu_s // 2} s) ...", flush=True)
         idle = bench(feeder, direct, cpu_s // 2, ["--idle"], tmp, "cpu-idle")
         print(f"measuring CPU and memory, audio only ({cpu_s} s) ...", flush=True)
-        a = bench(feeder, direct, cpu_s, ["--stereo48"], tmp, "cpu-audio")
+        a = bench(feeder, direct, cpu_s, ["--stereo", "48000"], tmp, "cpu-audio")
+        print(f"measuring CPU, audio only at 44.1 kHz ({cpu_s} s) ...", flush=True)
+        a44 = bench(feeder, direct, cpu_s, ["--stereo", "44100"], tmp, "cpu-audio-44k")
         print(f"measuring CPU, audio and video ({cpu_s} s) ...", flush=True)
-        v = bench(feeder, direct, cpu_s, ["--stereo48", "--jpeg", "30000"], tmp, "cpu-video")
+        v = bench(feeder, direct, cpu_s, ["--stereo", "48000", "--jpeg", "30000"], tmp, "cpu-video")
         print(f"measuring feed-to-wire latency ({lat_s} s) ...", flush=True)
         lt = bench(feeder, direct, lat_s, ["--times"], tmp, "latency")
         arrivals = []
@@ -472,18 +521,42 @@ def main():
             turn_url, turn_args = f"https://localhost:{https}", ["--ca", certs[0]]
         tr = run_demo(demo, turn_url, "longturn", ["--wav", wav, "--tail", "9999", "--duration", "12", "--stats"]
                       + turn_args, tmp, "longturn", 60)
+        cap = None
+        if capture_demo:
+            print(f"measuring the demo capturing from {args.alsa}"
+                  f"{' and ' + args.v4l2 if args.v4l2 else ''} ({cpu_s} s) ...", flush=True)
+            dev = ["--alsa", args.alsa, "--channel", str(args.channel)] + (["--v4l2", args.v4l2] if args.v4l2 else [])
+            cap = run_demo(capture_demo, broker, "capture-report", dev + ["--duration", str(cpu_s), "--stats"],
+                           tmp, "capture", cpu_s + 60)
+            rows = []
+            for _ in range(50):
+                rows = [r for r in conformance.read_summaries([summary]) if r["scenario"] == "capture-report"]
+                if rows:
+                    break
+                time.sleep(0.1)
+            cap["mock"] = rows[-1] if rows else {}
 
         def cpu(r):
             keep = {k: r.get(k) for k in ("exit", "cpu_s", "wall_s", "cpu_pct", "blocks", "errors")}
             return keep | ({"stderr": r.get("stderr")} if r.get("exit") else {})
         foot.update({
-            "cpu_idle": cpu(idle), "cpu_audio": cpu(a), "cpu_video": cpu(v),
+            "cpu_idle": cpu(idle), "cpu_audio": cpu(a), "cpu_audio_44k": cpu(a44), "cpu_video": cpu(v),
             "mem_audio": memory_of(a), "mem_turn": memory_of(tr), "turn_tls": bool(certs),
             "turn_samples": ((of(tr["events"], "turn_ready") or [{}])[0]).get("samples"),
             "turn_exit": tr["exit"],
             "latency": latency(lt.get("feed_times", []), arrivals) if lt.get("feed_times") and arrivals
                        else {"error": lt.get("stderr", "no data")},
         })
+        if cap:
+            summ = (of(cap["events"], "summary") or [{}])[-1]
+            mk = cap.get("mock", {})
+            foot["capture"] = {
+                "alsa": args.alsa, "v4l2": args.v4l2, "exit": cap["exit"],
+                "cpu_pct": round(100.0 * summ["cpu_s"] / summ["wall_s"], 2) if summ.get("wall_s") else None,
+                "memory": memory_of(cap), "errors": [e.get("title") for e in of(cap["events"], "error")],
+                "audio_per_s": mk.get("audio_per_s"), "video_per_s": mk.get("video_per_s"),
+                "bad_frames": mk.get("bad_frames"), "stderr": cap["stderr"] if cap["exit"] else "",
+            }
     finally:
         if mock:
             mock.terminate()
