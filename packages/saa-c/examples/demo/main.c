@@ -1,9 +1,11 @@
 /*
- * saa_client_demo - stream a WAV (and optionally JPEG stills) to SAA and print
- * every event as one JSON line.
+ * saa_client_demo - stream a WAV, or a live microphone and camera, to SAA and
+ * print every event as one JSON line.
  *
  *   saa_client_demo --wav order.wav --wait-warmup --events out.jsonl
  *   arecord -q -f S16_LE -r 16000 -c 1 -t wav | saa_client_demo --wav -
+ *   saa_client_demo --alsa hw:CARD=Lite --v4l2 /dev/video2     (capture builds)
+ *   rpicam-vid -t 0 --codec mjpeg -o - | saa_client_demo --alsa default --mjpeg -
  *
  * JSON lines: {"ts_ms": <ms since start>, "event": "<callback name without on_>", ...}
  * with audio and JPEG payloads replaced by sample and byte counts. The first line
@@ -11,7 +13,7 @@
  * is "summary". The README lists every event and its fields.
  *
  * Exit codes: 0 clean, 2 auth, 3 rate limited or no capacity, 4 transport gave
- * up, 5 bad arguments.
+ * up, 5 bad arguments, 6 the microphone did not open.
  */
 
 #include "saa/saa_client.h"
@@ -19,7 +21,9 @@
 #include <dirent.h>
 #include <errno.h>
 #include <math.h>
+#include <poll.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -28,18 +32,24 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
+
+#include "mjpeg_split.h"
 
 #define EXIT_OK        0
 #define EXIT_AUTH      2
 #define EXIT_BUSY      3
 #define EXIT_TRANSPORT 4
 #define EXIT_ARGS      5
+#define EXIT_DEVICE    6
 
 #define JSONL_SCHEMA   1         /* bump when a field changes meaning or goes away */
 
 typedef struct {
     const char *url, *token, *wav_path, *jpeg_dir, *events_path, *ca_file, *profile, *record_dir;
+    const char *alsa, *v4l2, *mjpeg;
     int         fast, wait_warmup, stats, utterance, max_reconnects, quiet, channel, token_arg;
+    int         width, height, fps;
     double      threshold, duration_s, tail_s;
 } opts_t;
 
@@ -51,6 +61,7 @@ static pthread_cond_t  g_cv = PTHREAD_COND_INITIALIZER;
 static saa_client_t *g_client;
 static int      g_warm, g_turns, g_errors, g_last_kind = -1, g_last_code, g_ended;
 static int      g_turn_no;               /* --record-turns file numbering; service thread only */
+static volatile sig_atomic_t g_signal;   /* SIGINT or SIGTERM: stop cleanly */
 
 /* ── time and JSON output ──────────────────────────────────────────── */
 
@@ -529,21 +540,90 @@ static void *video_main(void *arg)
     return NULL;
 }
 
+/* --mjpeg -: JPEG frames on stdin, as rpicam-vid writes them. The newest frame is
+ * sent every 1/fps s, so a camera running faster is thinned rather than queued. */
+typedef struct {
+    uint8_t *buf;
+    size_t   len, cap;
+    int      fresh;
+} latest_t;
+
+static void keep_latest(const uint8_t *jpeg, size_t len, void *ud)
+{
+    latest_t *l = ud;
+    if (len > l->cap) {
+        uint8_t *b = realloc(l->buf, len);
+        if (!b) return;
+        l->buf = b;
+        l->cap = len;
+    }
+    memcpy(l->buf, jpeg, len);
+    l->len = len;
+    l->fresh = 1;
+}
+
+static void *mjpeg_main(void *arg)
+{
+    media_t *m = arg;
+    mjpeg_split_t s;
+    mjpeg_split_init(&s, 8u << 20);
+    latest_t l = { NULL, 0, 0, 0 };
+    static uint8_t chunk[65536];
+    const double interval = 1.0 / (g_o.fps > 0 ? g_o.fps : 4);
+    double next = now_s();
+    long sent = 0;
+    while (!__atomic_load_n(&m->stop, __ATOMIC_ACQUIRE)) {
+        int wait_ms = (int)((next - now_s()) * 1000.0);
+        struct pollfd p = { STDIN_FILENO, POLLIN, 0 };
+        if (poll(&p, 1, wait_ms > 0 ? wait_ms : 0) > 0) {
+            ssize_t n = read(STDIN_FILENO, chunk, sizeof chunk);
+            if (n == 0 || (n < 0 && errno != EINTR && errno != EAGAIN)) break;    /* the writer is gone */
+            if (n > 0 && mjpeg_split_feed(&s, chunk, (size_t)n, keep_latest, &l) < 0) break;
+            if (!s.frames && s.skipped > (1u << 20)) {
+                fprintf(stderr, "--mjpeg -: no JPEG in the first MB of stdin; is it MJPEG?\n");
+                break;
+            }
+        }
+        if (now_s() >= next) {
+            if (l.fresh && saa_client_feed_video(m->c, l.buf, l.len) == SAA_CLIENT_OK) sent++;
+            l.fresh = 0;
+            next += interval;
+            if (next < now_s()) next = now_s() + interval;   /* fell behind: no burst */
+        }
+    }
+    emit("mjpeg_end", I("frames", s.frames), I("sent", sent), I("dropped", s.dropped),
+         I("skipped_bytes", s.skipped), NULL);
+    mjpeg_split_free(&s);
+    free(l.buf);
+    return NULL;
+}
+
+static void on_signal(int sig)
+{
+    g_signal = sig;
+}
+
 /* ── main ──────────────────────────────────────────────────────────── */
 
 static void usage(FILE *to, const char *argv0)
 {
     fprintf(to,
-        "usage: %s --wav FILE [options]   (API key from $SAA_API_KEY, or --token)\n"
+        "usage: %s (--wav FILE | --alsa DEV) [options]   (API key from $SAA_API_KEY, or --token)\n"
         "  --url URL        broker https://... (default %s) or a direct ws(s):// URL\n"
         "  --wav FILE       audio to stream: any rate and channel count, 16/24/32-bit PCM\n"
         "                   or float32; real-time paced. '-' reads a WAV stream on stdin,\n"
         "                   such as arecord -t wav, as it arrives\n"
+        "  --alsa DEV       capture a microphone instead, such as hw:CARD=Lite or default\n"
+        "                   (a library built with SAA_WITH_CAPTURE)\n"
         "  --channel N      the channel to keep (default 0)\n"
         "  --fast           stream the WAV as fast as the client accepts it\n"
         "  --wait-warmup    stream silence until warmup_complete, then the WAV\n"
         "  --tail S         seconds of silence after the WAV (default 3)\n"
         "  --jpeg-dir DIR   also send DIR/*.jpg at 4 fps, in name order\n"
+        "  --v4l2 DEV       capture an MJPEG camera, such as /dev/video2 (with --alsa)\n"
+        "  --size WxH       the camera's frame size (default 640x480)\n"
+        "  --fps N          frames a second to send from --v4l2 or --mjpeg (default 4)\n"
+        "  --mjpeg -        JPEG frames on stdin, such as rpicam-vid --codec mjpeg -o -\n"
         "  --audio-only     request server_profile=audio_only\n"
         "  --profile NAME   request a specific server_profile\n"
         "  --threshold F    class-2 threshold (default 0.7)\n"
@@ -557,7 +637,9 @@ static void usage(FILE *to, const char *argv0)
         "  --record-turns DIR  write each turn_ready to DIR as NNNN.wav, its frames as NNNN_k.jpg\n"
         "  --quiet          nothing on stdout, only errors on stderr (use with --events)\n"
         "  --help, --version\n"
-        "exit: 0 clean, 2 auth, 3 rate limited or no capacity, 4 transport, 5 arguments\n",
+        "SIGINT or SIGTERM stops cleanly, with the summary line\n"
+        "exit: 0 clean, 2 auth, 3 rate limited or no capacity, 4 transport, 5 arguments,\n"
+        "      6 the microphone did not open\n",
         argv0, SAA_CLIENT_DEFAULT_URL);
 }
 
@@ -583,6 +665,16 @@ static int parse_args(int argc, char **argv)
         else if (ARG("--max-reconnects")) g_o.max_reconnects = atoi(v);
         else if (ARG("--channel"))   g_o.channel = atoi(v);
         else if (ARG("--record-turns")) g_o.record_dir = v;
+        else if (ARG("--alsa"))      g_o.alsa = v;
+        else if (ARG("--v4l2"))      g_o.v4l2 = v;
+        else if (ARG("--mjpeg"))     g_o.mjpeg = v;
+        else if (ARG("--fps"))       g_o.fps = atoi(v);
+        else if (ARG("--size")) {
+            if (sscanf(v, "%dx%d", &g_o.width, &g_o.height) != 2 || g_o.width <= 0 || g_o.height <= 0) {
+                fprintf(stderr, "--size takes WIDTHxHEIGHT, such as 640x480\n");
+                return -1;
+            }
+        }
         else if (!strcmp(k, "--fast"))        g_o.fast = 1;
         else if (!strcmp(k, "--wait-warmup")) g_o.wait_warmup = 1;
         else if (!strcmp(k, "--audio-only"))  g_o.profile = "audio_only";
@@ -594,7 +686,47 @@ static int parse_args(int argc, char **argv)
         else return -1;
 #undef ARG
     }
-    if (!g_o.wav_path || !g_o.token || !*g_o.token || g_o.channel < 0) return -1;
+    if (!g_o.token || !*g_o.token || g_o.channel < 0 || g_o.fps < 0) return -1;
+    if (!g_o.wav_path == !g_o.alsa) {
+        fprintf(stderr, "give one audio source: --wav or --alsa\n");
+        return -1;
+    }
+    if ((g_o.jpeg_dir != NULL) + (g_o.v4l2 != NULL) + (g_o.mjpeg != NULL) > 1) {
+        fprintf(stderr, "give at most one video source: --jpeg-dir, --v4l2, or --mjpeg\n");
+        return -1;
+    }
+    if (g_o.v4l2 && !g_o.alsa) {
+        fprintf(stderr, "--v4l2 is live video, so it goes with live audio: --alsa, not --wav\n");
+        return -1;
+    }
+    if (g_o.mjpeg && strcmp(g_o.mjpeg, "-")) {
+        fprintf(stderr, "--mjpeg reads stdin: give it '-'\n");
+        return -1;
+    }
+    if (g_o.mjpeg && g_o.wav_path && !strcmp(g_o.wav_path, "-")) {
+        fprintf(stderr, "--mjpeg - and --wav - cannot both read stdin\n");
+        return -1;
+    }
+    if (g_o.alsa && (g_o.fast || g_o.wait_warmup)) {
+        fprintf(stderr, "--fast and --wait-warmup apply to --wav\n");
+        return -1;
+    }
+    if (g_o.width && !g_o.v4l2) {
+        fprintf(stderr, "--size applies to --v4l2\n");
+        return -1;
+    }
+    if (g_o.fps && !g_o.v4l2 && !g_o.mjpeg) {
+        fprintf(stderr, "--fps applies to --v4l2 and --mjpeg\n");
+        return -1;
+    }
+    if (g_o.quiet && !g_o.events_path) {
+        fprintf(stderr, "--quiet needs --events FILE, or the JSON lines go nowhere\n");
+        return -1;
+    }
+    if (g_o.fast && g_o.wav_path && !strcmp(g_o.wav_path, "-")) {
+        fprintf(stderr, "--fast does not apply to --wav -: a stream arrives at its own pace\n");
+        return -1;
+    }
     if (g_o.token_arg && !g_o.quiet)
         fprintf(stderr, "warning: --token is visible to other users of this machine; prefer $SAA_API_KEY\n");
     return 0;
@@ -611,6 +743,7 @@ static int exit_code_for(int rc)
 {
     if (rc == SAA_CLIENT_ERR_AUTH) return EXIT_AUTH;
     if (rc == SAA_CLIENT_ERR_BUSY) return EXIT_BUSY;
+    if (rc == SAA_CLIENT_ERR_DEVICE) return EXIT_DEVICE;
     return EXIT_TRANSPORT;
 }
 
@@ -628,13 +761,22 @@ int main(int argc, char **argv)
         return EXIT_ARGS;
     }
     g_t0 = now_s();
+    struct sigaction sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_handler = on_signal;
+    sa.sa_flags = SA_RESTART | SA_RESETHAND;             /* a second one ends the process */
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
 
     media_t m;
     memset(&m, 0, sizeof m);
-    if (wav_open(&m.wav, g_o.wav_path)) return EXIT_ARGS;
-    if (g_o.channel >= m.wav.channels) {
-        fprintf(stderr, "--channel %d: the WAV has %d channel(s)\n", g_o.channel, m.wav.channels);
-        return EXIT_ARGS;
+    if (g_o.wav_path) {
+        if (wav_open(&m.wav, g_o.wav_path)) return EXIT_ARGS;
+        if (g_o.channel >= m.wav.channels) {
+            fprintf(stderr, "--channel %d: the WAV has %d channel(s)\n", g_o.channel, m.wav.channels);
+            return EXIT_ARGS;
+        }
     }
 
     saa_client_config_t cfg;
@@ -643,7 +785,14 @@ int main(int argc, char **argv)
     cfg.token = g_o.token;
     cfg.server_profile = g_o.profile;
     cfg.initial_threshold = (float)g_o.threshold;
-    cfg.video_mode = g_o.jpeg_dir ? SAA_VIDEO_FEED : SAA_VIDEO_NONE;
+    cfg.video_mode = g_o.v4l2 ? SAA_VIDEO_CAPTURE : (g_o.jpeg_dir || g_o.mjpeg) ? SAA_VIDEO_FEED : SAA_VIDEO_NONE;
+    cfg.enable_audio = g_o.alsa != NULL;
+    cfg.audio_device = g_o.alsa;
+    cfg.audio_channel = g_o.channel;
+    cfg.camera_device = g_o.v4l2;
+    cfg.camera_width = g_o.width;
+    cfg.camera_height = g_o.height;
+    cfg.camera_fps = g_o.fps;
     cfg.utterance_handling = g_o.utterance;
     cfg.ca_file = g_o.ca_file;
     cfg.max_reconnect_attempts = g_o.max_reconnects;
@@ -655,14 +804,15 @@ int main(int argc, char **argv)
                                                  on_utterance_config };
     saa_client_t *c = saa_client_create(&cfg);
     if (!c) {
-        fprintf(stderr, "invalid configuration (URL, token, or profile)\n");
+        fprintf(stderr, "invalid configuration (URL, token, or profile)%s\n",
+                g_o.alsa ? ", or a library built without capture (SAA_WITH_CAPTURE)" : "");
         return EXIT_ARGS;
     }
     g_client = m.c = c;
 
     emit("demo_start", I("schema", JSONL_SCHEMA), S("version", saa_client_version()),
          S("wav", g_o.wav_path), I("wav_rate", m.wav.rate), I("wav_channels", m.wav.channels),
-         I("channel", g_o.channel), NULL);
+         I("channel", g_o.channel), S("alsa", g_o.alsa), S("v4l2", g_o.v4l2), S("mjpeg", g_o.mjpeg), NULL);
 
     int rc = saa_client_start_wait(c, 30000);
     int exit_code = EXIT_OK;
@@ -670,15 +820,21 @@ int main(int argc, char **argv)
         exit_code = exit_code_for(rc);
     } else {
         pthread_t at, vt;
-        pthread_create(&at, NULL, audio_main, &m);
-        int video = g_o.jpeg_dir != NULL;
-        if (video) pthread_create(&vt, NULL, video_main, &m);
+        int audio = g_o.wav_path != NULL, video = g_o.jpeg_dir || g_o.mjpeg;
+        if (audio) pthread_create(&at, NULL, audio_main, &m);
+        if (video) pthread_create(&vt, NULL, g_o.mjpeg ? mjpeg_main : video_main, &m);
 
         double end = g_o.duration_s > 0 ? g_t0 + g_o.duration_s : 0;
-        while (!__atomic_load_n(&m.audio_done, __ATOMIC_ACQUIRE) && !(end && now_s() >= end))
+        while (!g_signal && !(end && now_s() >= end)) {
+            if (audio && __atomic_load_n(&m.audio_done, __ATOMIC_ACQUIRE)) break;
+            if (!audio && !saa_client_is_active(c)) {         /* capture: no feed call to report it */
+                __atomic_store_n(&m.client_ended, 1, __ATOMIC_RELEASE);
+                break;
+            }
             sleep_until(now_s() + 0.05);
+        }
         __atomic_store_n(&m.stop, 1, __ATOMIC_RELEASE);
-        pthread_join(at, NULL);
+        if (audio) pthread_join(at, NULL);
         if (video) pthread_join(vt, NULL);
         pthread_mutex_lock(&g_mu);
         g_ended = 1;
@@ -690,8 +846,13 @@ int main(int argc, char **argv)
         pthread_mutex_unlock(&g_mu);
     }
     saa_client_stop(c);
+    struct rusage ru;
+    getrusage(RUSAGE_SELF, &ru);
+    double cpu_s = (double)ru.ru_utime.tv_sec + ru.ru_utime.tv_usec / 1e6 + (double)ru.ru_stime.tv_sec +
+                   ru.ru_stime.tv_usec / 1e6;
     emit("summary", I("exit_code", exit_code), I("turns", g_turns), I("errors", g_errors),
-         I("peak_rss_kb", g_o.stats ? mem_kb("VmHWM") : -1), NULL);
+         I("peak_rss_kb", g_o.stats ? mem_kb("VmHWM") : -1), I("signal", g_signal),
+         F("cpu_s", cpu_s), F("wall_s", now_s() - g_t0), NULL);
     saa_client_destroy(c);
     if (m.wav.f && m.wav.f != stdin) fclose(m.wav.f);
     if (g_out && g_out != stdout) fclose(g_out);
