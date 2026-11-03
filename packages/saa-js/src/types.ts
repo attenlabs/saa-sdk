@@ -142,7 +142,7 @@ export interface AttentionErrorEvent {
   message: string;
   detail: string | null;
   code?: number;
-  /** transport | auth | rate_limit | audio | server | environment */
+  /** transport | auth | rate_limit | audio | video | server | environment */
   kind?: string;
   retriable?: boolean;
 }

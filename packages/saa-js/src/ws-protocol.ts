@@ -57,7 +57,13 @@ export type ServerMessage =
       preview: boolean;
       reason?: string;
     }
-  | { type: "error"; message: string; detail?: string }
+  | {
+      type: "error";
+      message: string;
+      detail?: string;
+      /** "video_stall" | "no_video" from the video-stall guard, which then closes 1011. */
+      code?: string;
+    }
   | { type: "pong"; client_ts?: number; server_ts?: number };
 
 export function base64ToInt16(b64: string): Int16Array {

@@ -36,6 +36,12 @@ const RECONNECT_BASE_S = 0.5;
 const RECONNECT_CAP_S = 20;
 // Close codes that are NOT worth retrying — give up and surface the error.
 const FATAL_CLOSE_CODES = new Set([1000, 1002, 1003, 1007, 1008, 1009, 1010, 1015]);
+// Server error codes for a video profile that gets no usable video
+const VIDEO_STALL_TITLES = new Map([
+  ["video_stall", "Video stalled"],
+  ["no_video", "No video received"],
+]);
+const VIDEO_STALL_REASON = "video stall";
 
 type AnyListener = (payload?: unknown) => void;
 
@@ -86,6 +92,8 @@ export class AttentionClient {
   private enableVideo: boolean;
   // preserves the caller's original request so a later start() retries video if failed
   private readonly enableVideoWish: boolean;
+  // set when the server reports no usable video: audio-only until the next start()
+  private videoOff = false;
   // false for a caller-supplied stream — stop() won't stop its tracks
   private ownsStream = true;
   private feedBuffer = new Float32Array(0); // feedAudio() carry-over
@@ -158,6 +166,7 @@ export class AttentionClient {
     // restore the caller's original video wish: an audio-only fallback in a
     // prior session must not silently pin this one audio-only if a camera is back
     this.enableVideo = this.enableVideoWish;
+    this.videoOff = false;
 
     const videoEl = options.videoElement ?? null;
     const videoOpts = this.opts.video ?? {};
@@ -567,11 +576,13 @@ export class AttentionClient {
    */
   private async resolveWsUrl(): Promise<string> {
     const url = this.opts.url ?? DEFAULT_SERVER_URL;
+    // after a video stall, audio_only overrides an explicit profile and the URL's
+    const serverProfile = this.videoOff ? "audio_only" : this.opts.serverProfile;
     if (url.startsWith("ws://") || url.startsWith("wss://")) {
       //  bake the server_profile into the query (the backend
       // /ws reads it); precedence handled in applyServerProfileToWsUrl.
       const resolved = applyUtteranceHandlingToWsUrl(
-        applyServerProfileToWsUrl(url, this.opts.serverProfile, this.enableVideo),
+        applyServerProfileToWsUrl(url, serverProfile, this.enableVideo),
         this.opts.utteranceHandling === true,
       );
       this.httpOrigin = wsUrlToHttpOrigin(resolved);
@@ -585,7 +596,7 @@ export class AttentionClient {
     // broker bakes the selector into the wss URL it hands back; empty body =
     // legacy default profile.
     const body = allocateBody(
-      this.opts.serverProfile, this.enableVideo, this.opts.utteranceHandling === true,
+      serverProfile, this.enableVideo, this.opts.utteranceHandling === true,
     );
     if (body) headers["Content-Type"] = "application/json";
     const r = await fetch(allocateUrl, { method: "POST", headers, body });
@@ -677,6 +688,13 @@ export class AttentionClient {
           settled = true;
           reject(buildCloseError(e.code, e.reason, e.wasClean));
           return;
+        }
+
+        // A newer server already sent a coded error for this (see
+        // handleServerMessage); an older one sends only the close. Either way
+        // the reconnect goes audio-only
+        if (e.code === 1011 && e.reason === VIDEO_STALL_REASON) {
+          this.videoFallback(null, `close code ${e.code} (${e.reason})`, e.code);
         }
 
         // unclean mid-session drop is the lifecycle event; always emit it
@@ -872,6 +890,10 @@ export class AttentionClient {
         });
         break;
       case "error":
+        if (typeof msg.code === "string" && VIDEO_STALL_TITLES.has(msg.code)) {
+          this.videoFallback(msg.code, msg.message || null);
+          break;
+        }
         this.emit("error", {
           title: "Server Error",
           message: msg.message,
@@ -881,6 +903,46 @@ export class AttentionClient {
         });
         break;
     }
+  }
+
+  /**
+   * The server got no usable video on a profile that needs it, and closes the
+   * socket. Stop sending video (camera and fed frames) so the reconnect asks
+   * for audio_only; the caller's video setting returns on the next start().
+   * Runs once per start().
+   */
+  private videoFallback(serverCode: string | null, detail: string | null, closeCode?: number): void {
+    if (this.videoOff || this.stopping) return;
+    this.videoOff = true;
+    this.enableVideo = false;
+    if (this.videoPipeline) {
+      this.videoPipeline.stop();
+      this.videoPipeline = null;
+    }
+    // turn the camera off too, unless the caller owns the stream
+    if (this.mediaStream && this.ownsStream) {
+      for (const t of this.mediaStream.getVideoTracks()) t.stop();
+    }
+    // a close-only server doesn't say which; this socket's own count does
+    const code =
+      serverCode && VIDEO_STALL_TITLES.has(serverCode)
+        ? serverCode
+        : this.sentVideo > 0 ? "video_stall" : "no_video";
+    const cause =
+      code === "no_video"
+        ? "The server received no video frames."
+        : "Video frames stopped reaching the server.";
+    const err: AttentionEventMap["error"] = {
+      title: VIDEO_STALL_TITLES.get(code) ?? "Video stalled",
+      message:
+        cause +
+        (this.autoReconnect ? " Reconnecting audio-only." : " Video stays off until the next start()."),
+      detail,
+      kind: "video",
+      retriable: true,
+    };
+    if (closeCode !== undefined) err.code = closeCode;
+    this.emit("error", err);
   }
 
   private sendAudio(pcm16: ArrayBuffer): void {
@@ -894,7 +956,8 @@ export class AttentionClient {
   }
 
   private sendVideo(jpeg: ArrayBuffer): void {
-    if (!this.isConnected) {
+    // after a video stall the session is audio-only: fed frames are dropped too
+    if (this.videoOff || !this.isConnected) {
       this.skippedVideo++;
       return;
     }
