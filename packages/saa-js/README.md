@@ -100,6 +100,8 @@ await client.start({ videoElement: videoEl });
 
 If the camera is unavailable when video capture is enabled and audio is enabled, `start()` continues with an audio-only session (`audio_only` server profile), emits an `error` with `kind: "environment"` and `title: "Camera unavailable"`. The original `enableVideo` request is restored on the next `start()`, so a later session retries video.
 
+If the server gets no video for more than 15 s while audio is flowing, on a profile that needs video, it closes the session with code 1011 and reason `"video stall"`. It stops the camera, drops `feedVideo()` frames, and reconnects with the `audio_only` server profile, even over an explicit `serverProfile`. The next `start()` asks for video again.
+
 ## Utterance handling
 
 Opt in with `utteranceHandling: true`. The server then segments speech into utterances on voice
