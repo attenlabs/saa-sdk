@@ -113,7 +113,9 @@ client = AttentionClient(
 | `feed_audio(audio, *, sample_rate=16000)` | Stream audio captured by another stack instead of the SDK's own mic. Requires `enable_audio=False`. See [Feeding external audio and video](#feeding-external-audio-and-video). |
 | `feed_video(frame)` | Push an externally-captured frame instead of the SDK's own camera. Requires `enable_video=False`. Accepts pre-encoded JPEG `bytes` or a raw `np.ndarray` (BGR, JPEG-encoded internally). See [Feeding external audio and video](#feeding-external-audio-and-video). |
 
-When `enable_video=True` but the camera can't be opened (missing device, or one held by another app), `start()` continues audio-only if `enable_audio=True`.  The original `enable_video` request is restored on the next `start()`, so a later session retries video.
+When `enable_video=True` but the camera can't be opened (missing device, or one held by another app), `start()` continues audio-only if `enable_audio=True`, and emits an `error` with `kind="environment"` and `title="Camera unavailable"`. The original `enable_video` request is restored on the next `start()`, so a later session retries video.
+
+If the server gets no video for more than 15 s while audio is flowing, on a profile that needs video, it closes the session with code 1011 and reason `"video stall"`. It stops the camera, drops `feed_video()` frames, and reconnects with `server_profile="audio_only"`, even over an explicit `server_profile`. The next `start()` asks for video again.
 
 ### Feeding external audio and video
 
@@ -291,7 +293,7 @@ title: str                  # error category ("Auth Failed", "Connection Stalled
 message: str                # human-readable message
 detail: str | None = None   # technical detail
 code: int | None = None     # WebSocket close code, if applicable
-kind: str | None = None     # transport | auth | rate_limit | audio | server | environment
+kind: str | None = None     # transport | auth | rate_limit | audio | video | server | environment
 retriable: bool = False     # True if the SDK will (or you could) retry
 ```
 

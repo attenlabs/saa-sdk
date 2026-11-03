@@ -80,6 +80,8 @@ def test_camera_unavailable_falls_back_to_audio_only(patched, caplog):
     client = AttentionClient(
         url="wss://backend.example/ws", enable_video=True, enable_audio=True
     )
+    errors = []
+    client.on_error(errors.append)
     with caplog.at_level(logging.WARNING, logger="saa"):
         client.start()
     try:
@@ -101,6 +103,11 @@ def test_camera_unavailable_falls_back_to_audio_only(patched, caplog):
         assert any(
             "audio-only" in r.getMessage() for r in caplog.records
         ), "expected an audio-only fallback warning"
+
+        # ...and an error event, the same one saa-js emits
+        assert [(e.title, e.kind, e.retriable) for e in errors] == [
+            ("Camera unavailable", "environment", False)
+        ]
     finally:
         client.stop()
 
