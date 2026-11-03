@@ -9,6 +9,20 @@ Published registries:
 - [`saa-livekit-client`](https://pypi.org/project/saa-livekit-client/) on PyPI
 - [`saa-pipecat-client`](https://pypi.org/project/saa-pipecat-client/) on PyPI
 
+## 2026-11-02
+
+### `attenlabs-saa` 0.9.1 · `@attenlabs/saa-js` 0.8.1
+
+- A video stall no longer reconnects into the same failure. When the server reports that it got no video on a profile that needs it (an `error` with `code` `"video_stall"` or `"no_video"`, or a 1011 close with reason `"video stall"` from older servers), the client emits an `error` with kind `video`, titled "Video stalled" or "No video received". It then stops the camera, drops fed frames, and reconnects with the `audio_only` server profile, even over an explicit one. The next `start()` asks for video again.
+- `attenlabs-saa`: a camera that will not open at `start()` now emits an `error` ("Camera unavailable", kind `environment`) besides the log warning, as `@attenlabs/saa-js` already did.
+
+## 2026-09-28
+
+### `attenlabs-saa` 0.9.0 · `@attenlabs/saa-js` 0.8.0
+
+- Utterance handling, in preview. Opt in with `utterance_handling=True` (`utteranceHandling: true` in JS) and the server segments speech into utterances, transcribes each one, and scores whether it was aimed at the device or at a person. Each arrives as an `utterance_ended` event (`utteranceEnded`) with the text, the verdict, and the utterance audio; `utterance_config` (`utteranceConfig`) says whether the feature is on for the session. The stream is independent of `turn_ready`: drive your LLM from one or the other.
+- The classifier is conditioned on the preceding dialogue, so feed back every assistant response, as spoken, with `add_assistant_turn()` (`addAssistantTurn()`). `set_utterance_threshold()` sets the one-sided decision threshold and `clear_utterance_history()` starts a new conversation (`setUtteranceThreshold()`, `clearUtteranceHistory()`).
+
 ## 2026-08-13
 
 ### `attenlabs-saa` 0.8.0
