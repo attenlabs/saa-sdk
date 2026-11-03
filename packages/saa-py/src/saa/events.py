@@ -142,7 +142,7 @@ class AttentionErrorEvent:
     message: str
     detail: Optional[str] = None
     code: Optional[int] = None  # numeric WS close code when applicable
-    kind: Optional[str] = None  # transport | auth | rate_limit | audio | server | environment
+    kind: Optional[str] = None  # transport | auth | rate_limit | audio | video | server | environment
     retriable: bool = False
 
 

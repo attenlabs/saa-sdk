@@ -56,6 +56,10 @@ RECONNECT_BASE_S = 0.5
 RECONNECT_CAP_S = 20.0
 # Close codes we never reconnect on (auth/protocol/policy — retrying won't help).
 FATAL_CLOSE_CODES = frozenset({1000, 1002, 1003, 1007, 1008, 1009, 1010, 1015})
+# Server error codes for a video profile that gets no usable video. The server
+# then closes 1011 with VIDEO_STALL_REASON; older servers send only that close
+VIDEO_STALL_TITLES = {"video_stall": "Video stalled", "no_video": "No video received"}
+VIDEO_STALL_REASON = "video stall"
 
 logger = logging.getLogger("saa")
 
@@ -102,6 +106,8 @@ class AttentionClient:
         self.enable_video = enable_video
         # _enable_video_wish keeps original request so a later start() (camera back) retries video
         self._enable_video_wish = enable_video
+        # set when the server reports no usable video: audio-only until the next start()
+        self._video_off = False
         self.server_profile = server_profile
         self.auto_reconnect = auto_reconnect
         # opt-in utterance pipeline: transcripts + addressee verdicts per utterance
@@ -192,6 +198,7 @@ class AttentionClient:
         # prior session must not silently pin this one audio-only if a camera
         # is back.
         self.enable_video = self._enable_video_wish
+        self._video_off = False
         try:
             # Probe the camera BEFORE opening the WS. also lets an audio-only fallback bind the correct
             # server profile at connect time, since _resolve_ws_url reads self.enable_video.
@@ -208,6 +215,13 @@ class AttentionClient:
                             self.video_config.device_index,
                         )
                         self.enable_video = False
+                        self._emit("error", AttentionErrorEvent(
+                            title="Camera unavailable",
+                            message="Could not open the camera. Continuing with an audio-only session.",
+                            detail=f"camera device {self.video_config.device_index} did not open",
+                            kind="environment",
+                            retriable=False,
+                        ))
                     else:
                         raise RuntimeError(
                             f"camera device {self.video_config.device_index} could"
@@ -451,7 +465,10 @@ class AttentionClient:
         default. Explicit ``server_profile=`` wins; otherwise ``enable_video=
         False`` selects ``"audio_only"``. ``"default"`` is the server's implicit
         profile, so it resolves to None — omitting the selector keeps legacy
-        behavior byte-for-byte."""
+        behavior byte-for-byte. After a server video stall, ``"audio_only"``
+        overrides both until the next start()."""
+        if self._video_off:
+            return "audio_only"
         if self.server_profile is not None:
             prof = self.server_profile
         else:
@@ -486,7 +503,8 @@ class AttentionClient:
             resolved = url
             if profile:
                 existing = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
-                if not (self.server_profile is None and "server_profile" in existing):
+                # an inferred profile defers to the URL's; the video-stall fallback replaces it
+                if self._video_off or not (self.server_profile is None and "server_profile" in existing):
                     resolved = _append_query(resolved, server_profile=profile)
             if self.utterance_handling:
                 resolved = _append_query(resolved, utterance_handling="1")
@@ -651,6 +669,11 @@ class AttentionClient:
         # reconnect loop logs+retries on its own.
         if not opened_mid_session:
             return
+
+        # A newer server already sent a coded error for this (see _handle_msg);
+        # an older one sends only the close. Either way the reconnect goes audio-only
+        if code == 1011 and reason == VIDEO_STALL_REASON:
+            self._video_fallback(None, f"close code {code} ({reason})", close_code=code)
 
         # Reconnect only for an opened mid-session socket that dropped on a
         # retriable code while we aren't stopping.
@@ -854,12 +877,48 @@ class AttentionClient:
                 reason=msg.get("reason") if isinstance(msg.get("reason"), str) else None,
             ))
         elif t == "error":
+            if msg.get("code") in VIDEO_STALL_TITLES:
+                self._video_fallback(msg["code"], msg.get("message") or None)
+                return
             self._emit("error", AttentionErrorEvent(
                 title="Server Error",
                 message=msg.get("message") or "",
                 detail=msg.get("detail"),
                 kind="server",
             ))
+
+    def _video_fallback(self, server_code: Optional[str], detail: Optional[str],
+                        close_code: Optional[int] = None) -> None:
+        """The server got no usable video on a profile that needs it, and closes
+        the socket. Stop sending video (camera and fed frames) so the reconnect
+        asks for ``audio_only``; the caller's video setting returns on the next
+        start(). Runs once per start()."""
+        if self._video_off or self._stopping:
+            return
+        self._video_off = True
+        self.enable_video = False
+        cam, self._cam = self._cam, None
+        if cam is not None:
+            cam.stop()
+        if server_code not in VIDEO_STALL_TITLES:
+            # a close-only server doesn't say which; this socket's own count does
+            server_code = "video_stall" if self._sent_video else "no_video"
+        if server_code == "no_video":
+            cause = "The server received no video frames."
+        else:
+            cause = "Video frames stopped reaching the server."
+        if self.auto_reconnect:
+            then = " Reconnecting audio-only."
+        else:
+            then = " Video stays off until the next start()."
+        self._emit("error", AttentionErrorEvent(
+            title=VIDEO_STALL_TITLES[server_code],
+            message=cause + then,
+            detail=detail,
+            code=close_code,
+            kind="video",
+            retriable=True,
+        ))
 
     def _send_control(self, data: dict) -> bool:
         if self._ws is None or not self._ws_open.is_set():
@@ -887,7 +946,8 @@ class AttentionClient:
             pass
 
     def _on_cam_jpeg(self, jpeg_bytes: bytes) -> None:
-        if self._ws is None or not self._ws_open.is_set():
+        # after a video stall the session is audio-only: fed frames are dropped too
+        if self._video_off or self._ws is None or not self._ws_open.is_set():
             self._skipped_video += 1
             return
         try:
